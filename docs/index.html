@@ -5,135 +5,154 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mustela — In-page IOC investigation for SOC analysts</title>
 <meta name="description" content="Mustela is a Chrome extension that detects, highlights and investigates indicators of compromise (IOC) directly on the page. Built for SOC analysts.">
+<link rel="icon" type="image/png" href="icon128.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0a0e14;
-    --bg-alt: #0f141d;
-    --panel: #121a26;
-    --border: #1f2a3a;
-    --text: #c9d4e3;
-    --muted: #7d8da3;
-    --accent: #2ee6a8;
-    --accent-dim: rgba(46, 230, 168, 0.12);
-    --cyan: #4cc3ff;
-    --mono: "SFMono-Regular", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+    --bg1: #07111f;
+    --bg2: #0f172a;
+    --glass: rgba(255,255,255,.14);
+    --glass-2: rgba(255,255,255,.10);
+    --glass-3: rgba(255,255,255,.06);
+    --line: rgba(255,255,255,.16);
+    --line-soft: rgba(255,255,255,.10);
+    --text: #eef2ff;
+    --muted: rgba(226,232,240,.76);
+    --muted-2: rgba(203,213,225,.68);
+    --accent: #7dd3fc;
+    --accent-dim: rgba(125,211,252,.16);
+    --mono: "SFMono-Regular", ui-monospace, Consolas, "Liberation Mono", monospace;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
-    background: var(--bg);
     color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
     line-height: 1.6;
+    background:
+      radial-gradient(circle at 20% 0%, rgba(125,211,252,.16), transparent 32%),
+      radial-gradient(circle at 80% 10%, rgba(255,255,255,.08), transparent 20%),
+      radial-gradient(circle at 50% 100%, rgba(250,204,21,.05), transparent 26%),
+      linear-gradient(160deg, var(--bg1), var(--bg2));
+    background-attachment: fixed;
   }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
   .container { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
   code, .mono { font-family: var(--mono); }
+  code {
+    background: rgba(255,255,255,.12);
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 0.85em;
+  }
 
   /* Nav */
   nav {
     position: sticky; top: 0; z-index: 10;
-    background: rgba(10, 14, 20, 0.85);
-    backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--border);
+    background: rgba(7, 17, 31, 0.72);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line-soft);
   }
   nav .container {
     display: flex; align-items: center; justify-content: space-between;
-    height: 60px;
+    height: 62px;
   }
-  .logo { font-family: var(--mono); font-size: 1.1rem; font-weight: 700; color: var(--text); }
-  .logo span { color: var(--accent); }
-  nav .links a { color: var(--muted); margin-left: 24px; font-size: 0.9rem; }
+  .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 800; font-size: 1.05rem; color: var(--text);
+    letter-spacing: -0.01em;
+  }
+  .logo img { width: 28px; height: 28px; border-radius: 8px; }
+  nav .links a { color: var(--muted); margin-left: 24px; font-size: 0.9rem; font-weight: 600; }
   nav .links a:hover { color: var(--text); text-decoration: none; }
 
   /* Hero */
-  .hero {
-    padding: 90px 0 70px;
-    text-align: center;
-    background:
-      radial-gradient(ellipse 60% 50% at 50% 0%, rgba(46, 230, 168, 0.07), transparent),
-      linear-gradient(rgba(31, 42, 58, 0.25) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(31, 42, 58, 0.25) 1px, transparent 1px);
-    background-size: 100% 100%, 40px 40px, 40px 40px;
-  }
-  .badge {
+  .hero { padding: 96px 0 72px; text-align: center; }
+  .eyebrow {
     display: inline-block;
-    font-family: var(--mono); font-size: 0.78rem;
-    color: var(--accent);
-    background: var(--accent-dim);
-    border: 1px solid rgba(46, 230, 168, 0.3);
+    color: var(--muted);
+    text-transform: uppercase;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.16em;
+    background: var(--glass-2);
+    border: 1px solid var(--line);
     border-radius: 999px;
-    padding: 4px 14px;
-    margin-bottom: 24px;
+    padding: 6px 16px;
+    margin-bottom: 26px;
   }
+  .hero .mark { width: 84px; height: 84px; border-radius: 24px; margin-bottom: 22px;
+    box-shadow: 0 18px 48px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.2); }
   .hero h1 {
     font-size: clamp(2rem, 5vw, 3.2rem);
-    line-height: 1.15;
-    letter-spacing: -0.02em;
+    font-weight: 800;
+    line-height: 1.12;
+    letter-spacing: -0.025em;
     margin-bottom: 18px;
   }
   .hero h1 em { font-style: normal; color: var(--accent); }
   .hero p.sub {
     max-width: 640px; margin: 0 auto 36px;
-    color: var(--muted); font-size: 1.12rem;
+    color: var(--muted); font-size: 1.1rem;
   }
   .cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
   .btn {
     display: inline-block;
-    padding: 12px 26px;
-    border-radius: 8px;
-    font-weight: 600; font-size: 0.95rem;
-    transition: transform 0.15s, box-shadow 0.15s;
+    padding: 12px 28px;
+    border-radius: 999px;
+    font-weight: 700; font-size: 0.95rem;
+    transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
   }
   .btn:hover { text-decoration: none; transform: translateY(-2px); }
   .btn-primary {
-    background: var(--accent); color: #06251a;
-    box-shadow: 0 0 24px rgba(46, 230, 168, 0.25);
+    background: var(--accent); color: #07111f;
+    box-shadow: 0 8px 28px rgba(125,211,252,.28);
   }
   .btn-secondary {
-    border: 1px solid var(--border); color: var(--text);
-    background: var(--panel);
+    background: var(--glass); color: var(--text);
+    border: 1px solid var(--line);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.18);
   }
 
-  /* Terminal */
-  .terminal {
-    max-width: 620px;
+  /* Scan log card */
+  .scanlog {
+    max-width: 640px;
     margin: 56px auto 0;
-    background: var(--bg-alt);
-    border: 1px solid var(--border);
-    border-radius: 10px;
+    background: var(--glass-2);
+    border: 1px solid var(--line);
+    border-radius: 24px;
     text-align: left;
     overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 24px 64px rgba(0,0,0,.45);
   }
-  .terminal-bar {
+  .scanlog-bar {
     display: flex; gap: 7px;
-    padding: 11px 14px;
-    border-bottom: 1px solid var(--border);
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--line-soft);
   }
-  .terminal-bar i { width: 11px; height: 11px; border-radius: 50%; background: var(--border); }
-  .terminal pre {
-    padding: 18px 20px;
+  .scanlog-bar i { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,.22); }
+  .scanlog pre {
+    padding: 18px 22px;
     font-family: var(--mono);
     font-size: 0.84rem;
-    line-height: 1.7;
-    color: var(--muted);
+    line-height: 1.8;
+    color: var(--muted-2);
     overflow-x: auto;
   }
-  .terminal .p { color: var(--accent); }
-  .terminal .c { color: var(--text); }
-  .terminal .ok { color: var(--cyan); }
+  .scanlog .p { color: var(--accent); font-weight: 700; }
+  .scanlog .c { color: var(--text); }
+  .scanlog .ok { color: var(--accent); }
 
   /* Sections */
-  section { padding: 80px 0; }
-  section.alt { background: var(--bg-alt); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  section { padding: 84px 0; }
   .section-tag {
-    font-family: var(--mono); font-size: 0.8rem;
-    color: var(--accent); letter-spacing: 0.12em;
-    text-transform: uppercase; margin-bottom: 10px;
+    color: var(--muted); text-transform: uppercase;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.16em; margin-bottom: 10px;
   }
-  h2 { font-size: 1.9rem; letter-spacing: -0.01em; margin-bottom: 14px; }
+  h2 { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 14px; }
   .section-intro { color: var(--muted); max-width: 620px; margin-bottom: 44px; }
 
   /* Features grid */
@@ -143,91 +162,106 @@
     gap: 18px;
   }
   .card {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 24px;
-    transition: border-color 0.2s;
+    background: var(--glass-2);
+    border: 1px solid var(--line-soft);
+    border-radius: 24px;
+    padding: 26px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
+    transition: background 0.2s, border-color 0.2s;
   }
-  .card:hover { border-color: rgba(46, 230, 168, 0.4); }
+  .card:hover { background: var(--glass); border-color: var(--line); }
   .card .icon {
     font-family: var(--mono); font-size: 1rem;
     color: var(--accent);
     background: var(--accent-dim);
-    border-radius: 8px;
-    width: 38px; height: 38px;
+    border: 1px solid rgba(125,211,252,.22);
+    border-radius: 12px;
+    width: 40px; height: 40px;
     display: flex; align-items: center; justify-content: center;
     margin-bottom: 16px;
   }
-  .card h3 { font-size: 1.05rem; margin-bottom: 8px; }
+  .card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
   .card p { color: var(--muted); font-size: 0.92rem; }
 
   /* Screenshots */
   .shots { display: grid; gap: 56px; }
-  .shot { display: grid; grid-template-columns: 1fr 1.6fr; gap: 36px; align-items: center; }
-  .shot:nth-child(even) .shot-text { order: 2; }
-  .shot-text h3 { font-size: 1.3rem; margin-bottom: 10px; }
+  .shot-text { max-width: 620px; }
+  .shot-text h3 { font-size: 1.3rem; font-weight: 700; margin-bottom: 10px; }
   .shot-text p { color: var(--muted); }
-  .shot img {
-    width: 100%;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  .shot-wide img, .shot-tall img {
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    box-shadow: 0 20px 56px rgba(0,0,0,.45);
   }
+  .shot-wide { display: grid; gap: 20px; }
+  .shot-wide img { width: 100%; height: auto; }
+  .shot-tall {
+    display: grid; grid-template-columns: 1fr auto;
+    gap: 48px; align-items: center;
+  }
+  .shot-tall img { width: 300px; max-width: 100%; height: auto; }
   .step-num {
-    font-family: var(--mono); color: var(--accent);
-    font-size: 0.85rem; margin-bottom: 6px; display: block;
+    display: block;
+    color: var(--accent);
+    text-transform: uppercase;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.16em; margin-bottom: 8px;
   }
   @media (max-width: 720px) {
-    .shot { grid-template-columns: 1fr; }
-    .shot:nth-child(even) .shot-text { order: 0; }
+    .shot-tall { grid-template-columns: 1fr; justify-items: start; }
   }
 
   /* Privacy */
-  .privacy-list { list-style: none; display: grid; gap: 12px; max-width: 680px; }
+  .privacy-list { list-style: none; display: grid; gap: 14px; max-width: 680px; }
   .privacy-list li {
-    display: flex; gap: 12px; align-items: baseline;
+    display: flex; gap: 14px; align-items: baseline;
     color: var(--muted);
+    background: var(--glass-3);
+    border: 1px solid var(--line-soft);
+    border-radius: 18px;
+    padding: 14px 18px;
   }
   .privacy-list li::before {
-    content: ">"; font-family: var(--mono);
-    color: var(--accent); font-weight: 700;
+    content: "✓";
+    color: var(--accent); font-weight: 800;
   }
   .privacy-list li strong { color: var(--text); }
 
   /* Install */
   .install-box {
-    background: var(--bg-alt);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 26px;
+    background: var(--glass-2);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    padding: 28px;
     max-width: 680px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.14);
   }
   .install-box pre {
     font-family: var(--mono); font-size: 0.88rem;
     color: var(--text); line-height: 1.8;
     overflow-x: auto;
   }
-  .install-box pre .cm { color: var(--muted); }
+  .install-box pre .cm { color: var(--muted-2); }
   .install-steps { margin-top: 20px; color: var(--muted); font-size: 0.95rem; }
   .install-steps li { margin-bottom: 6px; margin-left: 20px; }
+  .install-steps strong { color: var(--text); }
 
   /* Footer */
   footer {
-    border-top: 1px solid var(--border);
-    padding: 36px 0;
+    border-top: 1px solid var(--line-soft);
+    padding: 38px 0;
     text-align: center;
-    color: var(--muted);
+    color: var(--muted-2);
     font-size: 0.88rem;
   }
-  footer .mono { color: var(--accent); }
+  footer .brand { color: var(--text); font-weight: 700; }
 </style>
 </head>
 <body>
 
 <nav>
   <div class="container">
-    <div class="logo">mustela<span>_</span></div>
+    <div class="logo"><img src="icon128.png" alt="Mustela logo">Mustela</div>
     <div class="links">
       <a href="#features">Features</a>
       <a href="#workflow">Workflow</a>
@@ -240,7 +274,8 @@
 
 <header class="hero">
   <div class="container">
-    <div class="badge">CHROME EXTENSION · MANIFEST V3 · MIT</div>
+    <img class="mark" src="icon128.png" alt="Mustela — weasel logo"><br>
+    <div class="eyebrow">Chrome extension · Manifest V3 · MIT</div>
     <h1>Investigate IOC<br>without leaving <em>the page</em></h1>
     <p class="sub">
       Mustela detects and highlights indicators of compromise — IPs, domains, URLs, hashes —
@@ -252,10 +287,10 @@
       <a class="btn btn-secondary" href="https://github.com/ArmorIntel/mustela">View source ↗</a>
     </div>
 
-    <div class="terminal">
-      <div class="terminal-bar"><i></i><i></i><i></i></div>
-      <pre><span class="p">mustela</span> --scan current_page
-<span class="c">[+]</span> 4 IPv4    <span class="c">[+]</span> 2 domains    <span class="c">[+]</span> 1 SHA256
+    <div class="scanlog">
+      <div class="scanlog-bar"><i></i><i></i><i></i></div>
+      <pre><span class="p">[mustela]</span> scanning current page…
+<span class="c">[+]</span> 4 IPv4    <span class="c">[+]</span> 2 domains    <span class="c">[+]</span> 1 SHA256 highlighted
 <span class="ok">→</span> 185.220.101.34   <span class="ok">VT 23/94</span>  <span class="ok">AbuseIPDB 100%</span>  <span class="ok">Shodan: 3 ports</span>
 <span class="c">[✓]</span> verdicts aggregated · cached locally · zero telemetry</pre>
     </div>
@@ -264,7 +299,7 @@
 
 <section id="features">
   <div class="container">
-    <div class="section-tag">// capabilities</div>
+    <div class="section-tag">Capabilities</div>
     <h2>Built for the analyst loop</h2>
     <p class="section-intro">
       SOC workflows are full of repetitive pivots: copy an IOC, open a new tab, paste,
@@ -305,32 +340,32 @@
   </div>
 </section>
 
-<section id="workflow" class="alt">
+<section id="workflow">
   <div class="container">
-    <div class="section-tag">// workflow</div>
+    <div class="section-tag">Workflow</div>
     <h2>From raw page to verdict in three steps</h2>
     <p class="section-intro">Open a SIEM, a ticket, a CTI report or an email — Mustela does the rest.</p>
 
     <div class="shots">
-      <div class="shot">
+      <div class="shot-wide">
         <div class="shot-text">
-          <span class="step-num">step 01</span>
+          <span class="step-num">Step 01</span>
           <h3>IOC highlighted in place</h3>
           <p>Mustela scans the page and highlights every indicator it finds, without altering the host page's behavior.</p>
         </div>
         <img src="screenshots/01-page-highlights.png" alt="IOC highlighted on a page" loading="lazy">
       </div>
-      <div class="shot">
+      <div class="shot-wide">
         <div class="shot-text">
-          <span class="step-num">step 02</span>
+          <span class="step-num">Step 02</span>
           <h3>One click, one panel</h3>
           <p>Click any highlight to open the in-page investigation panel with consolidated provider verdicts, notes and JSON export.</p>
         </div>
         <img src="screenshots/02-page-panel.png" alt="In-page investigation panel" loading="lazy">
       </div>
-      <div class="shot">
+      <div class="shot-tall">
         <div class="shot-text">
-          <span class="step-num">step 03</span>
+          <span class="step-num">Step 03</span>
           <h3>Your investigation trail</h3>
           <p>The popup summarizes the current page, offers manual lookup, and keeps your recent investigations at hand.</p>
         </div>
@@ -342,7 +377,7 @@
 
 <section id="privacy">
   <div class="container">
-    <div class="section-tag">// trust posture</div>
+    <div class="section-tag">Trust posture</div>
     <h2>Transparent by design</h2>
     <p class="section-intro">No backend, no telemetry, no analytics, no account system. Mustela is honest about its trade-offs.</p>
     <ul class="privacy-list">
@@ -354,9 +389,9 @@
   </div>
 </section>
 
-<section id="install" class="alt">
+<section id="install">
   <div class="container">
-    <div class="section-tag">// deployment</div>
+    <div class="section-tag">Deployment</div>
     <h2>Up and running in two minutes</h2>
     <p class="section-intro">Works out of the box for detection and pivots. Add free API keys for enriched verdicts.</p>
     <div class="install-box">
@@ -375,7 +410,7 @@ npm install && npm run build</pre>
 
 <footer>
   <div class="container">
-    <p><span class="mono">mustela_</span> — named after the weasel genus: small, fast, very good at hunting.</p>
+    <p><span class="brand">Mustela</span> — named after the weasel genus: small, fast, very good at hunting.</p>
     <p><a href="https://github.com/ArmorIntel/mustela">GitHub</a> · <a href="https://github.com/ArmorIntel/mustela/blob/main/LICENSE">MIT License</a> · <a href="https://github.com/ArmorIntel/mustela/blob/main/SECURITY.md">Security policy</a></p>
   </div>
 </footer>
