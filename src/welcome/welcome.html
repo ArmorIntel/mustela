@@ -1,0 +1,334 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Mustela — Welcome & Setup</title>
+  <style>
+    :root {
+      --glass: rgba(255,255,255,.14);
+      --glass-2: rgba(255,255,255,.10);
+      --line: rgba(255,255,255,.16);
+      --line-soft: rgba(255,255,255,.10);
+      --text: #eef2ff;
+      --muted: rgba(226,232,240,.76);
+      --muted-2: rgba(203,213,225,.68);
+      --bg1: #07111f;
+      --bg2: #0f172a;
+      --accent: #7dd3fc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin:0;
+      color:var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(125,211,252,.16), transparent 30%),
+        radial-gradient(circle at 80% 10%, rgba(255,255,255,.08), transparent 18%),
+        radial-gradient(circle at 50% 100%, rgba(250,204,21,.06), transparent 24%),
+        linear-gradient(160deg, var(--bg1), var(--bg2));
+    }
+    main { max-width: 1120px; margin: 24px auto; padding: 0 18px 40px; }
+    .hero, .card {
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      box-shadow: 0 24px 60px rgba(2,6,23,.22), inset 0 1px 0 rgba(255,255,255,.32);
+      backdrop-filter: blur(30px) saturate(180%);
+      -webkit-backdrop-filter: blur(30px) saturate(180%);
+    }
+    .hero { padding: 24px; margin-bottom: 16px; }
+    .eyebrow { color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .16em; }
+    h1 { margin: 8px 0 6px; font-size: 40px; line-height: 1; letter-spacing: -.05em; }
+    h2, h3 { margin-top: 0; }
+    .sub { color: var(--muted); max-width: 760px; font-size: 14px; }
+    .actions { display:flex; gap:10px; flex-wrap: wrap; margin-top: 16px; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .card { padding: 20px; }
+    .full { grid-column: 1 / -1; }
+    code { background: rgba(255,255,255,.12); padding: 2px 7px; border-radius: 999px; }
+    button, a.btn {
+      appearance:none; border:1px solid rgba(255,255,255,.16); border-radius:999px; padding:10px 14px;
+      background: rgba(255,255,255,.14); color:white; cursor:pointer; text-decoration:none;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 8px 18px rgba(2,6,23,.10);
+      backdrop-filter: blur(18px) saturate(170%); -webkit-backdrop-filter: blur(18px) saturate(170%);
+    }
+    button:hover, a.btn:hover { transform: translateY(-1px); }
+    label { display:block; margin: 12px 0 6px; color: var(--muted); }
+    input[type="password"], input[type="number"], select {
+      width:100%; padding:12px 14px; border-radius:18px; border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.10); color: var(--text); box-shadow: inset 0 1px 0 rgba(255,255,255,.16);
+    }
+    .toggle { display:flex; align-items:center; justify-content:space-between; gap:10px; padding: 8px 0; }
+    .muted { color: var(--muted); }
+    .status { margin-left: 8px; color: var(--muted); }
+    .section-block { grid-column: 1 / -1; margin-top: 2px; }
+    .section-header {
+      display:flex; align-items:center; gap:12px; margin: 0 0 14px; padding: 14px 18px;
+      border-radius: 24px; background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.12);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.20);
+      backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%);
+    }
+    .section-icon {
+      width: 38px; height: 38px; border-radius: 14px; display:grid; place-items:center; flex:0 0 auto;
+      background: rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.14); box-shadow: inset 0 1px 0 rgba(255,255,255,.24);
+    }
+    .section-icon svg, .provider-logo svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .section-copy h2 { margin: 0; font-size: 21px; letter-spacing: -.03em; }
+    .section-copy p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+    .provider-card { position: relative; overflow: hidden; }
+    .provider-card::before { content:''; position:absolute; inset:0; pointer-events:none; background: linear-gradient(180deg, rgba(255,255,255,.06), transparent 34%); }
+    .provider-title { display:flex; align-items:center; gap:10px; margin-bottom: 8px; }
+    .provider-logo {
+      width: 36px; height: 36px; border-radius: 12px; display:grid; place-items:center; flex:0 0 auto;
+      border:1px solid rgba(255,255,255,.16); box-shadow: inset 0 1px 0 rgba(255,255,255,.24);
+    }
+    .provider-logo.vt { background: rgba(59,130,246,.18); color: #bfdbfe; }
+    .provider-logo.abuse { background: rgba(239,68,68,.18); color: #fecaca; }
+    .provider-logo.shodan { background: rgba(99,102,241,.18); color: #c7d2fe; }
+    .provider-title h3 { margin: 0; font-size: 21px; letter-spacing: -.02em; }
+    .provider-sub { color: var(--muted); font-size: 14px; margin: 0 0 10px; }
+    .provider-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top: 12px; }
+    .api-test-status { display:inline-flex; align-items:center; gap:8px; color: var(--muted); font-size: 13px; }
+    .api-test-dot { width:10px; height:10px; border-radius:999px; background: rgba(148,163,184,.7); box-shadow: 0 0 0 4px rgba(255,255,255,.06); }
+    .api-test-status.valid .api-test-dot { background:#22c55e; }
+    .api-test-status.invalid .api-test-dot { background:#ef4444; }
+    .api-test-status.limited .api-test-dot { background:#f59e0b; }
+    .compact-help {
+      display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:999px;
+      border:1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.10); color: var(--muted); font-size: 12px;
+      cursor: help; margin-left: 6px;
+    }
+    details.advanced {
+      margin-top: 12px; border-radius: 18px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.10);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.14);
+      overflow: hidden;
+    }
+    details.advanced summary {
+      list-style: none; cursor: pointer; padding: 12px 14px; color: var(--muted); font-size: 13px; user-select: none;
+      display:flex; align-items:center; justify-content:space-between;
+    }
+    details.advanced summary::-webkit-details-marker { display:none; }
+    .advanced-body { padding: 0 14px 14px; color: var(--muted-2); font-size: 13px; line-height: 1.5; }
+    .advanced-body ol { margin: 0; padding-left: 18px; }
+    .sticky-savebar {
+      position: sticky; bottom: 16px; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      margin-top: 18px; padding: 12px 14px; border-radius: 999px; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.18);
+      box-shadow: 0 16px 40px rgba(2,6,23,.18), inset 0 1px 0 rgba(255,255,255,.26);
+      backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+    .sticky-savebar.hidden { opacity: 0; pointer-events: none; transform: translateY(8px); }
+    .sticky-savebar-left { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+    .save-indicator { width: 10px; height: 10px; border-radius: 999px; background: rgba(250,204,21,.9); box-shadow: 0 0 0 4px rgba(250,204,21,.10); }
+    .toast {
+      position: fixed; right: 20px; bottom: 24px; z-index: 40; display: inline-flex; align-items: center; gap: 10px;
+      padding: 12px 16px; border-radius: 999px; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.18);
+      box-shadow: 0 18px 44px rgba(2,6,23,.20), inset 0 1px 0 rgba(255,255,255,.26);
+      backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
+      opacity: 0; pointer-events: none; transform: translateY(8px); transition: opacity 180ms ease, transform 180ms ease;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast-icon {
+      width: 18px; height: 18px; border-radius: 999px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 800;
+      background: rgba(34,197,94,.18); color: #86efac;
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      h1 { font-size: 34px; }
+      .section-copy h2, .provider-title h3 { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <div class="eyebrow">Welcome & Setup</div>
+      <h1>Mustela</h1>
+      <div class="sub">Set up providers, validate access, and understand what stays local before you start investigating.</div>
+      <div class="actions">
+        <span id="statusTop" class="status"></span>
+      </div>
+    </section>
+
+    <div class="grid">
+      <div class="section-block">
+        <div class="section-header">
+          <div class="section-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v4"></path><path d="M12 17v4"></path><path d="M3 12h4"></path><path d="M17 12h4"></path><circle cx="12" cy="12" r="3.5"></circle></svg>
+          </div>
+          <div class="section-copy">
+            <h2>General settings</h2>
+            <p>Core behavior, local storage hygiene, and provider readiness.</p>
+          </div>
+        </div>
+      </div>
+
+      <section class="card">
+        <strong class="section-mini">Quick start</strong>
+        <h2 style="margin-bottom:8px;">How the extension behaves</h2>
+        <p class="muted">Detect IOC on the page, open details in one click, and keep provider access ready before you need it.</p>
+        <details class="advanced">
+          <summary>Show usage details <span>⌄</span></summary>
+          <div class="advanced-body">
+            <ol>
+              <li>Open a page containing an IOC: IP, subnet, ASN, domain, URL, or hash.</li>
+              <li>The extension highlights detectable IOC directly in the page.</li>
+              <li>Hover an IOC to reveal quick actions and external pivots.</li>
+              <li>Use the round button to open the investigation details.</li>
+              <li>Use the popup to triage current-page IOC and reopen recent history.</li>
+            </ol>
+          </div>
+        </details>
+      </section>
+
+      <section class="card">
+        <h2 style="margin-bottom:8px;">General preferences</h2>
+        <div class="toggle"><span>Highlight IOC directly on pages</span><input id="highlightEnabled" type="checkbox" /></div>
+        <label for="detectionMode">Detection mode<span class="compact-help" title="Balanced keeps broad detection. Strict reduces common page noise and doc/asset false positives.">?</span></label>
+        <select id="detectionMode">
+          <option value="balanced">Balanced</option>
+          <option value="strict">Strict</option>
+        </select>
+        <label>Cache retention (minutes)<span class="compact-help" title="Longer retention reduces API calls. Shorter retention gives fresher results.">?</span></label>
+        <input id="cacheTtlMinutes" type="number" min="1" max="1440" />
+      </section>
+
+      <section class="card">
+        <strong class="section-mini">Trust & transparency</strong>
+        <h2 style="margin-bottom:8px;">What stays local and what leaves the browser</h2>
+        <p class="muted" style="line-height:1.55; margin-bottom:10px;">IOC detection and highlighting run locally in Chrome. Settings, API keys, cache, history, and disabled-page rules are stored in <code>chrome.storage.local</code> on this browser profile.</p>
+        <p class="muted" style="line-height:1.55; margin:0;">When you enable VirusTotal, AbuseIPDB, or Shodan lookups, the IOC you investigate is sent to that provider. This MVP does not use its own backend or cloud sync.</p>
+      </section>
+
+      <div class="section-block">
+        <div class="section-header">
+          <div class="section-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12h8"></path><path d="M12 8v8"></path><circle cx="12" cy="12" r="9"></circle></svg>
+          </div>
+          <div class="section-copy">
+            <h2>Providers</h2>
+            <p>Connect external intelligence sources and verify each key before relying on the result.</p>
+          </div>
+        </div>
+      </div>
+
+      <section class="card provider-card">
+        <div class="provider-title">
+          <div class="provider-logo vt">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7.5h14"></path><path d="M8 7.5l4 9 4-9"></path><path d="M9.5 11h5"></path></svg>
+          </div>
+          <div>
+            <h3>VirusTotal</h3>
+            <p class="provider-sub">IP, domain, URL, hash reputation.</p>
+          </div>
+        </div>
+        <div class="toggle"><span>Enable VirusTotal</span><input id="virustotalEnabled" type="checkbox" /></div>
+        <label>API Key</label>
+        <input id="virustotalKey" type="password" placeholder="Paste your VirusTotal API key" />
+        <div class="provider-actions">
+          <button id="testVirusTotalBtn">Test API key</button>
+          <span id="virustotalTestStatus" class="api-test-status"><span class="api-test-dot"></span><span>Not tested</span></span>
+        </div>
+        <details class="advanced">
+          <summary>How to get the key <span>⌄</span></summary>
+          <div class="advanced-body">
+            <ol>
+              <li>Create an account on <a href="https://www.virustotal.com/gui/join-us" target="_blank" rel="noreferrer">VirusTotal</a>.</li>
+              <li>Open your profile / API key area.</li>
+              <li>Copy the key, paste it here, then test it.</li>
+            </ol>
+          </div>
+        </details>
+      </section>
+
+      <section class="card provider-card">
+        <div class="provider-title">
+          <div class="provider-logo abuse">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l6.5 3.7v4.8c0 4.6-3.1 6.9-6.5 8.5-3.4-1.6-6.5-3.9-6.5-8.5V7.2L12 3.5Z"></path><path d="M9.7 12.4l1.6 1.6 3.2-3.5"></path></svg>
+          </div>
+          <div>
+            <h3>AbuseIPDB</h3>
+            <p class="provider-sub">Fast malicious IP signal.</p>
+          </div>
+        </div>
+        <div class="toggle"><span>Enable AbuseIPDB</span><input id="abuseipdbEnabled" type="checkbox" /></div>
+        <label>API Key</label>
+        <input id="abuseipdbKey" type="password" placeholder="Paste your AbuseIPDB API key" />
+        <div class="provider-actions">
+          <button id="testAbuseIPDBBtn">Test API key</button>
+          <span id="abuseipdbTestStatus" class="api-test-status"><span class="api-test-dot"></span><span>Not tested</span></span>
+        </div>
+        <details class="advanced">
+          <summary>How to get the key <span>⌄</span></summary>
+          <div class="advanced-body">
+            <ol>
+              <li>Create an account on <a href="https://www.abuseipdb.com/register" target="_blank" rel="noreferrer">AbuseIPDB</a>.</li>
+              <li>Open your dashboard and copy the API key.</li>
+              <li>Paste it here, then test it.</li>
+            </ol>
+          </div>
+        </details>
+      </section>
+
+      <section class="card provider-card">
+        <div class="provider-title">
+          <div class="provider-logo shodan">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9a7 7 0 1 1 7 7H5V9Z"></path><path d="M12 16h7"></path><path d="M12 12h4"></path></svg>
+          </div>
+          <div>
+            <h3>Shodan</h3>
+            <p class="provider-sub">Infrastructure and exposure context.</p>
+          </div>
+        </div>
+        <div class="toggle"><span>Enable Shodan</span><input id="shodanEnabled" type="checkbox" /></div>
+        <label>API Key</label>
+        <input id="shodanKey" type="password" placeholder="Paste your Shodan API key" />
+        <div class="provider-actions">
+          <button id="testShodanBtn">Test API key</button>
+          <span id="shodanTestStatus" class="api-test-status"><span class="api-test-dot"></span><span>Not tested</span></span>
+        </div>
+        <details class="advanced">
+          <summary>How to get the key <span>⌄</span></summary>
+          <div class="advanced-body">
+            <ol>
+              <li>Create an account on <a href="https://account.shodan.io/register" target="_blank" rel="noreferrer">Shodan</a>.</li>
+              <li>Open your account page and copy the API key.</li>
+              <li>Paste it here, then test it.</li>
+            </ol>
+          </div>
+        </details>
+      </section>
+
+      <div class="section-block">
+        <div class="section-header">
+          <div class="section-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M7 12h10"></path><path d="M10 17h4"></path></svg>
+          </div>
+          <div class="section-copy">
+            <h2>Storage tools</h2>
+            <p>Clear local cache, history, or page exceptions without touching provider settings or saved keys.</p>
+          </div>
+        </div>
+      </div>
+
+      <section class="card full">
+        <div class="actions" style="margin-top:0;">
+          <button id="clearCacheBtn">Clear cache</button>
+          <button id="clearHistoryBtn">Clear history</button>
+          <button id="resetDisabledPagesBtn">Reset paused pages</button>
+          <span id="statusStorage" class="status"></span>
+        </div>
+      </section>
+    </div>
+
+    <div id="stickySavebar" class="sticky-savebar hidden">
+      <div class="sticky-savebar-left"><span class="save-indicator"></span><span id="stickySaveText">Unsaved settings changes</span></div>
+      <div class="actions" style="margin-top:0;">
+        <button id="saveStickyBtn">Save changes</button>
+      </div>
+    </div>
+  </main>
+  <div id="saveToast" class="toast" aria-live="polite"><span class="toast-icon">✓</span><span id="saveToastText">Settings saved locally.</span></div>
+  <script type="module" src="./welcome.js"></script>
+</body>
+</html>

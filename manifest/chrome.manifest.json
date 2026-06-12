@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Mustela",
+  "description": "Detect and investigate IOC values from any page.",
+  "version": "0.2.0",
+  "permissions": ["storage", "activeTab", "contextMenus", "tabs", "scripting"],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*",
+    "https://www.virustotal.com/*",
+    "https://api.abuseipdb.com/*",
+    "https://api.shodan.io/*"
+  ],
+  "background": {
+    "service_worker": "src/background/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Mustela",
+    "default_popup": "src/popup/popup.html"
+  },
+  "options_page": "src/welcome/welcome.html",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "icons": {
+    "16": "public/icons/icon16.png",
+    "32": "public/icons/icon32.png",
+    "48": "public/icons/icon48.png",
+    "128": "public/icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/shared/ioc.content-runtime.js", "src/content/content.js"],
+      "css": ["src/content/content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

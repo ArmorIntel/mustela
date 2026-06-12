@@ -1,0 +1,9 @@
+node_modules/
+dist/
+artifacts/
+test-results/
+playwright-report/
+*.pem
+*.crx
+*.zip
+.DS_Store

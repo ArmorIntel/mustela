@@ -1,0 +1,45 @@
+{
+  "name": "mustela",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Chrome MV3 extension to detect and investigate IOC values directly from any web page.",
+  "type": "module",
+  "license": "MIT",
+  "author": "ArmorIntel",
+  "homepage": "https://github.com/ArmorIntel/mustela#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ArmorIntel/mustela.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ArmorIntel/mustela/issues"
+  },
+  "keywords": [
+    "ioc",
+    "indicator-of-compromise",
+    "soc",
+    "threat-intelligence",
+    "virustotal",
+    "abuseipdb",
+    "shodan",
+    "chrome-extension",
+    "manifest-v3",
+    "security",
+    "incident-response",
+    "cti"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test",
+    "test:e2e": "npm run build && playwright test",
+    "test:e2e:xvfb": "npm run build && xvfb-run -a playwright test",
+    "verify": "npm run build && npm test && npm run test:e2e:xvfb",
+    "pack:zip": "node scripts/pack-zip.mjs",
+    "pack:crx": "node scripts/pack-crx.mjs",
+    "package": "npm run build && npm run pack:zip && npm run pack:crx"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "crx3": "^1.1.3"
+  }
+}
