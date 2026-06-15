@@ -446,6 +446,94 @@ function renderInsight(entry) {
   action.textContent = entry?.actionText ? `${source} · ${entry.actionText}` : source;
 }
 
+function renderCorrelation(state) {
+  const card = document.getElementById('correlationResult');
+  const btn = document.getElementById('correlateBtn');
+  if (!card || !btn) return;
+
+  if (state.loading) {
+    btn.textContent = 'Correlating…';
+    btn.disabled = true;
+    card.hidden = true;
+    return;
+  }
+
+  btn.textContent = 'Correlate with AI';
+
+  if (state.error) {
+    card.hidden = false;
+    card.innerHTML = '';
+    const msg = document.createElement('span');
+    msg.className = 'muted';
+    msg.textContent = state.error;
+    card.appendChild(msg);
+    return;
+  }
+
+  if (!state.result) {
+    card.hidden = true;
+    return;
+  }
+
+  const { patterns = [], verdict = '', action = '', iocCount = 0, model = '' } = state.result;
+  card.hidden = false;
+  card.innerHTML = '';
+
+  const verdictEl = document.createElement('div');
+  verdictEl.className = 'correlation-verdict';
+  verdictEl.textContent = verdict || 'Analysis complete';
+
+  const metaEl = document.createElement('div');
+  metaEl.className = 'history-meta';
+  metaEl.textContent = `${iocCount} IOC${iocCount !== 1 ? 's' : ''} · ${model}`;
+
+  const patList = document.createElement('ul');
+  patList.className = 'correlation-patterns';
+  (patterns.length ? patterns : ['No clear pattern detected.']).forEach((p) => {
+    const li = document.createElement('li');
+    li.textContent = p;
+    patList.appendChild(li);
+  });
+
+  card.append(verdictEl, metaEl, patList);
+
+  if (action) {
+    const actionEl = document.createElement('div');
+    actionEl.className = 'correlation-action';
+    actionEl.textContent = `→ ${action}`;
+    card.appendChild(actionEl);
+  }
+}
+
+function mountCorrelation(history, url, title, llmAvailable) {
+  const btn = document.getElementById('correlateBtn');
+  if (!btn) return;
+
+  const hasEnoughHistory = Array.isArray(history) && history.length >= 2;
+  btn.disabled = !hasEnoughHistory || !llmAvailable;
+  if (!hasEnoughHistory) {
+    btn.title = 'Investigate at least 2 IOCs to enable correlation';
+  } else if (!llmAvailable) {
+    btn.title = 'Configure Analyst Assist in settings to enable correlation';
+  } else {
+    btn.title = `Correlate ${history.length} recent IOCs with AI`;
+  }
+
+  btn.addEventListener('click', async () => {
+    renderCorrelation({ loading: true });
+    try {
+      const res = await send('CORRELATE_IOCS', { pageUrl: url, pageTitle: title });
+      if (!res?.ok) {
+        renderCorrelation({ error: res?.error || 'Correlation failed.' });
+      } else {
+        renderCorrelation({ result: res.data });
+      }
+    } catch {
+      renderCorrelation({ error: 'Correlation failed — check Analyst Assist settings.' });
+    }
+  });
+}
+
 function mountManualLookup(tab, onOpened) {
   const input = document.getElementById('manualInput');
   const chip = document.getElementById('manualTypeChip');
@@ -539,9 +627,11 @@ async function init() {
   let currentIocs = tab?.id && !disabled ? await getCurrentPageIocs(tab.id) : [];
 
   let history = [];
+  let settings = {};
   try {
-    const historyRes = await send('GET_HISTORY');
+    const [historyRes, settingsRes] = await Promise.all([send('GET_HISTORY'), send('GET_SETTINGS')]);
     history = Array.isArray(historyRes?.data) ? historyRes.data : [];
+    settings = settingsRes?.data || {};
   } catch {}
 
   currentIocs = hydrateCurrentIocs(currentIocs, history);
@@ -568,6 +658,11 @@ async function init() {
 
   renderHistory(history, url, currentIocs, openHistoryInvestigation, toggleHistoryPin);
   renderInsight(findSameIocHistory(history, currentIocs) || history.find((entry) => entry?.pageUrl === url) || history[0] || null);
+
+  const llm = settings?.analystAssist || {};
+  const llmAvailable = !!(llm.enabled && llm.baseUrl && llm.apiKey && llm.model);
+  mountCorrelation(history, url, tab?.title || '', llmAvailable);
+
   mountManualLookup(tab, refreshHistory);
 
   document.getElementById('iocListToggleBtn').addEventListener('click', () => {

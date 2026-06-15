@@ -1,5 +1,5 @@
 import { buildThreatSummary, detectSingleIoc, summarizeProviderVerdict } from '../shared/ioc.js';
-import { generateInvestigationSummary, validateOpenAiCompatibleConfig } from '../integrations/assistants.js';
+import { generateCorrelationAnalysis, generateInvestigationSummary, validateOpenAiCompatibleConfig } from '../integrations/assistants.js';
 import { addIocToMisp, isProviderSupportedForIoc, PROVIDERS } from '../providers/providers.js';
 import { addHistory, clearCache, clearDisabledPages, clearHistory, getCachedResult, getDetectedForTab, getHistory, getHistoryEntry, getSettings, isPageDisabled, saveDetectedForTab, saveHistoryNote, saveSettings, setCachedResult, setPageDisabled, toggleHistoryPin } from '../storage/storage.js';
 
@@ -166,6 +166,19 @@ async function handleMessage(message, sender) {
       const result = await provider.validateApiKey(message.payload);
       return { ok: true, data: { valid: !!result.ok, limited: !!result.limited, message: result.message || (result.ok ? 'API key valid' : 'Invalid API key') } };
     }
+    case 'CORRELATE_IOCS': {
+      const settings = await getSettings();
+      const llm = settings?.analystAssist || {};
+      if (!llm.enabled || !llm.baseUrl || !llm.apiKey || !llm.model) {
+        return { ok: false, error: 'Analyst Assist is not configured or disabled — set it up in settings.' };
+      }
+      const history = await getHistory();
+      const entries = selectCorrelationEntries(history);
+      if (entries.length < 2) return { ok: false, error: 'Not enough investigation history for correlation.' };
+      const { pageUrl = '', pageTitle = '' } = message?.payload || {};
+      const result = await generateCorrelationAnalysis(entries, llm, { pageUrl, pageTitle });
+      return { ok: true, data: result };
+    }
     case 'ADD_IOC_TO_MISP': {
       const settings = await getSettings();
       const ioc = message.payload?.ioc;
@@ -229,6 +242,26 @@ function sortProviderResults(results) {
     if (pa.providerBias !== pb.providerBias) return pb.providerBias - pa.providerBias;
     return String(a.provider || '').localeCompare(String(b.provider || ''));
   });
+}
+
+function selectCorrelationEntries(history) {
+  const MAX_IOCS = 10;
+  const all = Array.isArray(history) ? history : [];
+  const threatPriority = (e) => {
+    switch (e.overallVerdict) {
+      case 'malicious': return 3;
+      case 'suspicious': return 2;
+      case 'clean': return 1;
+      default: return 0;
+    }
+  };
+  return [...all]
+    .sort((a, b) => {
+      const tDiff = threatPriority(b) - threatPriority(a);
+      if (tDiff !== 0) return tDiff;
+      return new Date(b.lastSeen || 0) - new Date(a.lastSeen || 0);
+    })
+    .slice(0, MAX_IOCS);
 }
 
 async function rememberInvestigation(ioc, investigation, sender = {}) {
