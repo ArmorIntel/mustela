@@ -12,7 +12,14 @@ export const DEFAULT_SETTINGS = {
   providers: {
     virustotal: { enabled: true, apiKey: '' },
     abuseipdb: { enabled: true, apiKey: '' },
-    shodan: { enabled: true, apiKey: '' }
+    shodan: { enabled: true, apiKey: '' },
+    misp: { enabled: false, baseUrl: '', apiKey: '', defaultEventId: '' }
+  },
+  analystAssist: {
+    enabled: false,
+    baseUrl: '',
+    apiKey: '',
+    model: ''
   },
   cacheTtlMinutes: 30
 };
@@ -85,6 +92,10 @@ export function normalizeHistoryEntry(entry) {
     pinnedAt: entry?.pinnedAt || '',
     analystNote: String(entry?.analystNote || ''),
     analystNoteUpdatedAt: entry?.analystNoteUpdatedAt || '',
+    summaryText: String(entry?.summaryText || ''),
+    summarySource: String(entry?.summarySource || ''),
+    actionText: String(entry?.actionText || ''),
+    actionSource: String(entry?.actionSource || ''),
     pageUrl,
     pageTitle
   };
@@ -114,6 +125,10 @@ export function mergeHistoryEntries(history, incomingEntry, limit = MAX_HISTORY_
       pinnedAt: incoming.pinnedAt || existing.pinnedAt || '',
       analystNote: incoming.analystNote || existing.analystNote || '',
       analystNoteUpdatedAt: incoming.analystNoteUpdatedAt || existing.analystNoteUpdatedAt || '',
+      summaryText: incoming.summaryText || existing.summaryText || '',
+      summarySource: incoming.summarySource || existing.summarySource || '',
+      actionText: incoming.actionText || existing.actionText || '',
+      actionSource: incoming.actionSource || existing.actionSource || '',
       pageUrl: incoming.pageUrl || existing.pageUrl || '',
       pageTitle: incoming.pageTitle || existing.pageTitle || '',
       ioc: incoming.ioc || existing.ioc
@@ -140,7 +155,12 @@ async function safeSet(payload) {
 
 export async function getSettings() {
   const data = await getStorageArea().get(SETTINGS_KEY);
-  return { ...DEFAULT_SETTINGS, ...(data[SETTINGS_KEY] || {}), providers: { ...DEFAULT_SETTINGS.providers, ...((data[SETTINGS_KEY] || {}).providers || {}) } };
+  return {
+    ...DEFAULT_SETTINGS,
+    ...(data[SETTINGS_KEY] || {}),
+    providers: { ...DEFAULT_SETTINGS.providers, ...((data[SETTINGS_KEY] || {}).providers || {}) },
+    analystAssist: { ...DEFAULT_SETTINGS.analystAssist, ...((data[SETTINGS_KEY] || {}).analystAssist || {}) }
+  };
 }
 
 export async function saveSettings(settings) {
@@ -148,7 +168,8 @@ export async function saveSettings(settings) {
     ...DEFAULT_SETTINGS,
     ...(settings || {}),
     detectionMode: settings?.detectionMode === 'strict' ? 'strict' : 'balanced',
-    providers: { ...DEFAULT_SETTINGS.providers, ...((settings || {}).providers || {}) }
+    providers: { ...DEFAULT_SETTINGS.providers, ...((settings || {}).providers || {}) },
+    analystAssist: { ...DEFAULT_SETTINGS.analystAssist, ...((settings || {}).analystAssist || {}) }
   };
   await getStorageArea().set({ [SETTINGS_KEY]: sanitized });
   return sanitized;

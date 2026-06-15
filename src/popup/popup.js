@@ -427,6 +427,25 @@ function renderHistory(history, currentUrl, currentIocs, openHistoryInvestigatio
   });
 }
 
+function renderInsight(entry) {
+  const badge = document.getElementById('insightBadge');
+  const text = document.getElementById('insightText');
+  const action = document.getElementById('insightAction');
+  if (!badge || !text || !action) return;
+
+  if (!entry) {
+    badge.textContent = 'Idle';
+    text.textContent = 'Run an investigation to keep a short IOC brief in the popup.';
+    action.textContent = '';
+    return;
+  }
+
+  badge.textContent = `${verdictLabel(entry?.overallVerdict)} · ${Number(entry?.score || 0)}/100`;
+  text.textContent = entry?.summaryText || 'No brief saved for this IOC yet.';
+  const source = entry?.summarySource === 'llm' ? 'LLM brief' : 'Built-in brief';
+  action.textContent = entry?.actionText ? `${source} · ${entry.actionText}` : source;
+}
+
 function mountManualLookup(tab, onOpened) {
   const input = document.getElementById('manualInput');
   const chip = document.getElementById('manualTypeChip');
@@ -538,6 +557,7 @@ async function init() {
     currentIocs = hydrateCurrentIocs(currentIocs, history);
     renderSummary(currentIocs, disabled, openCurrentIocInvestigation, openHistoryInvestigation);
     renderHistory(history, url, currentIocs, openHistoryInvestigation, toggleHistoryPin);
+    renderInsight(findSameIocHistory(history, currentIocs) || history.find((entry) => entry?.pageUrl === url) || history[0] || null);
   };
 
   const toggleHistoryPin = async (entry) => {
@@ -547,6 +567,7 @@ async function init() {
   };
 
   renderHistory(history, url, currentIocs, openHistoryInvestigation, toggleHistoryPin);
+  renderInsight(findSameIocHistory(history, currentIocs) || history.find((entry) => entry?.pageUrl === url) || history[0] || null);
   mountManualLookup(tab, refreshHistory);
 
   document.getElementById('iocListToggleBtn').addEventListener('click', () => {
@@ -567,6 +588,7 @@ async function init() {
     currentIocs = hydrateCurrentIocs(currentIocs, history);
     renderSummary(currentIocs, disabled, openCurrentIocInvestigation, openHistoryInvestigation);
     renderHistory(history, url, currentIocs, openHistoryInvestigation, toggleHistoryPin);
+    renderInsight(findSameIocHistory(history, currentIocs) || history.find((entry) => entry?.pageUrl === url) || history[0] || null);
   });
 
   document.getElementById('investigateBtn').addEventListener('click', async () => {

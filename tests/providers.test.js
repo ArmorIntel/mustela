@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getSupportedExternalProviders, isProviderSupportedForIoc, PROVIDERS } from '../src/providers/providers.js';
+import { addIocToMisp, getSupportedExternalProviders, isProviderSupportedForIoc, PROVIDERS } from '../src/providers/providers.js';
 import { IOC_TYPES } from '../src/shared/ioc.js';
 
 function withMockFetch(handler, run) {
@@ -114,4 +114,80 @@ test('Shodan validation reports limited access without leaking query data into t
     assert.match(result.message, /limited/i);
   });
   assert.equal(calls.length, 2);
+});
+
+test('MISP lookup uses restSearch and returns compact event metadata', async () => {
+  await withMockFetch(async (url, options = {}) => {
+    assert.equal(url, 'https://misp.example.org/attributes/restSearch');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.credentials, 'omit');
+    assert.equal(options.cache, 'no-store');
+    assert.equal(options.referrerPolicy, 'no-referrer');
+    assert.equal(options.headers.Authorization, 'misp-key');
+    assert.equal(options.headers.Accept, 'application/json');
+    assert.equal(options.headers['Content-Type'], 'application/json');
+    const body = JSON.parse(options.body);
+    assert.equal(body.value, 'evil.example');
+    assert.deepEqual(body.type, ['domain', 'hostname']);
+    return {
+      ok: true,
+      json: async () => ({
+        response: {
+          Attribute: [
+            { id: 7, event_id: 42, value: 'evil.example', type: 'domain', category: 'Network activity', to_ids: true },
+            { id: 8, event_id: 42, value: 'evil.example', type: 'hostname', category: 'Network activity', to_ids: false }
+          ]
+        }
+      })
+    };
+  }, async () => {
+    const result = await PROVIDERS.misp.lookup({ type: IOC_TYPES.DOMAIN, normalized: 'evil.example' }, {
+      baseUrl: 'https://misp.example.org',
+      apiKey: 'misp-key'
+    });
+    assert.equal(result.provider, 'MISP');
+    assert.equal(result.success, true);
+    assert.equal(result.meta.matches, 2);
+    assert.equal(result.meta.eventCount, 1);
+    assert.equal(result.meta.toIdsHits, 1);
+    assert.equal(result.externalUrl, 'https://misp.example.org/attributes/view/7');
+  });
+});
+
+test('MISP add posts a supported attribute into the configured event', async () => {
+  await withMockFetch(async (url, options = {}) => {
+    assert.equal(url, 'https://misp.example.org/attributes/add/1337');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.Authorization, 'misp-key');
+    const body = JSON.parse(options.body);
+    assert.equal(body.value, '8.8.8.8');
+    assert.equal(body.type, 'ip-dst');
+    assert.equal(body.category, 'Network activity');
+    assert.equal(body.to_ids, true);
+    assert.match(body.comment, /Added from Mustela/);
+    return {
+      ok: true,
+      json: async () => ({
+        response: {
+          Attribute: {
+            id: 99,
+            event_id: 1337,
+            value: '8.8.8.8',
+            type: 'ip-dst'
+          }
+        }
+      })
+    };
+  }, async () => {
+    const result = await addIocToMisp({ type: IOC_TYPES.IP, normalized: '8.8.8.8' }, {
+      baseUrl: 'https://misp.example.org',
+      apiKey: 'misp-key',
+      defaultEventId: '1337'
+    }, {
+      comment: 'Added from Mustela'
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.attributeId, '99');
+    assert.equal(result.attributeUrl, 'https://misp.example.org/attributes/view/99');
+  });
 });

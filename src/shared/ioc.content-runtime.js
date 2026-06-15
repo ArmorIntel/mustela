@@ -264,6 +264,14 @@ function buildThreatEvidence(successful) {
     if (result.provider === 'Shodan') {
       const ports = Array.isArray(result.meta?.ports) ? result.meta.ports.filter(Boolean) : [];
       if (ports.length) evidence.push(`Shodan exposed ports ${ports.slice(0, 3).join(', ')}.`);
+      continue;
+    }
+    if (result.provider === 'MISP') {
+      const matches = Number(result.meta?.matches || 0);
+      const toIdsHits = Number(result.meta?.toIdsHits || 0);
+      if (matches > 0) {
+        evidence.push(`MISP already knows ${matches} matching attribute${matches > 1 ? 's' : ''}${toIdsHits > 0 ? `, ${toIdsHits} marked for IDS` : ''}.`);
+      }
     }
   }
   return evidence.slice(0, 2);
@@ -333,6 +341,18 @@ function summarizeProviderVerdict(results) {
       if (malicious > 0) {
         tags.push('community-detection');
         scoreFactors.push(`VirusTotal reported ${malicious} malicious or suspicious engine detections.`);
+      }
+    }
+    if (result.provider === 'MISP') {
+      const matches = Number(result.meta?.matches || 0);
+      const toIdsHits = Number(result.meta?.toIdsHits || 0);
+      if (matches > 0) {
+        tags.push('known-in-misp');
+        scoreFactors.push(`MISP already contains ${matches} matching attribute${matches > 1 ? 's' : ''}.`);
+      }
+      if (toIdsHits > 0) {
+        tags.push('misp-to-ids');
+        scoreFactors.push(`MISP marks ${toIdsHits} matching attribute${toIdsHits > 1 ? 's' : ''} for IDS correlation.`);
       }
     }
   }

@@ -28,6 +28,14 @@ async function load() {
   document.getElementById('abuseipdbKey').value = s.providers.abuseipdb.apiKey || '';
   document.getElementById('shodanEnabled').checked = !!s.providers.shodan.enabled;
   document.getElementById('shodanKey').value = s.providers.shodan.apiKey || '';
+  document.getElementById('mispEnabled').checked = !!s.providers.misp?.enabled;
+  document.getElementById('mispBaseUrl').value = s.providers.misp?.baseUrl || '';
+  document.getElementById('mispKey').value = s.providers.misp?.apiKey || '';
+  document.getElementById('mispDefaultEventId').value = s.providers.misp?.defaultEventId || '';
+  document.getElementById('llmEnabled').checked = !!s.analystAssist?.enabled;
+  document.getElementById('llmBaseUrl').value = s.analystAssist?.baseUrl || '';
+  document.getElementById('llmKey').value = s.analystAssist?.apiKey || '';
+  document.getElementById('llmModel').value = s.analystAssist?.model || '';
 }
 
 async function save() {
@@ -38,7 +46,19 @@ async function save() {
     providers: {
       virustotal: { enabled: document.getElementById('virustotalEnabled').checked, apiKey: document.getElementById('virustotalKey').value.trim() },
       abuseipdb: { enabled: document.getElementById('abuseipdbEnabled').checked, apiKey: document.getElementById('abuseipdbKey').value.trim() },
-      shodan: { enabled: document.getElementById('shodanEnabled').checked, apiKey: document.getElementById('shodanKey').value.trim() }
+      shodan: { enabled: document.getElementById('shodanEnabled').checked, apiKey: document.getElementById('shodanKey').value.trim() },
+      misp: {
+        enabled: document.getElementById('mispEnabled').checked,
+        baseUrl: document.getElementById('mispBaseUrl').value.trim(),
+        apiKey: document.getElementById('mispKey').value.trim(),
+        defaultEventId: document.getElementById('mispDefaultEventId').value.trim()
+      }
+    },
+    analystAssist: {
+      enabled: document.getElementById('llmEnabled').checked,
+      baseUrl: document.getElementById('llmBaseUrl').value.trim(),
+      apiKey: document.getElementById('llmKey').value.trim(),
+      model: document.getElementById('llmModel').value.trim()
     }
   };
   const response = await send('SAVE_SETTINGS', payload);
@@ -88,10 +108,9 @@ function setProviderStatus(provider, state, message) {
   if (text) text.textContent = message;
 }
 
-async function testProvider(provider, inputId) {
-  const apiKey = document.getElementById(inputId)?.value?.trim() || '';
+async function testProvider(provider, payload) {
   setProviderStatus(provider, null, 'Testing…');
-  const response = await send('TEST_API_KEY', { provider, apiKey });
+  const response = await send('TEST_API_KEY', { provider, ...(payload || {}) });
   if (!response.ok) {
     setProviderStatus(provider, 'invalid', 'Validation failed');
     showToast('API key test failed.', true);
@@ -104,9 +123,18 @@ async function testProvider(provider, inputId) {
   showToast(valid ? message : 'Invalid API key.', !valid);
 }
 
-document.getElementById('testVirusTotalBtn')?.addEventListener('click', () => testProvider('virustotal', 'virustotalKey'));
-document.getElementById('testAbuseIPDBBtn')?.addEventListener('click', () => testProvider('abuseipdb', 'abuseipdbKey'));
-document.getElementById('testShodanBtn')?.addEventListener('click', () => testProvider('shodan', 'shodanKey'));
+document.getElementById('testVirusTotalBtn')?.addEventListener('click', () => testProvider('virustotal', { apiKey: document.getElementById('virustotalKey')?.value?.trim() || '' }));
+document.getElementById('testAbuseIPDBBtn')?.addEventListener('click', () => testProvider('abuseipdb', { apiKey: document.getElementById('abuseipdbKey')?.value?.trim() || '' }));
+document.getElementById('testShodanBtn')?.addEventListener('click', () => testProvider('shodan', { apiKey: document.getElementById('shodanKey')?.value?.trim() || '' }));
+document.getElementById('testMispBtn')?.addEventListener('click', () => testProvider('misp', {
+  baseUrl: document.getElementById('mispBaseUrl')?.value?.trim() || '',
+  apiKey: document.getElementById('mispKey')?.value?.trim() || ''
+}));
+document.getElementById('testLlmBtn')?.addEventListener('click', () => testProvider('llm', {
+  baseUrl: document.getElementById('llmBaseUrl')?.value?.trim() || '',
+  apiKey: document.getElementById('llmKey')?.value?.trim() || '',
+  model: document.getElementById('llmModel')?.value?.trim() || ''
+}));
 
 
 function setDirtyState(isDirty) {
@@ -133,7 +161,25 @@ function showToast(message, isError = false) {
 }
 
 function bindDirtyTracking() {
-  const selectors = ['highlightEnabled', 'detectionMode', 'cacheTtlMinutes', 'virustotalEnabled', 'virustotalKey', 'abuseipdbEnabled', 'abuseipdbKey', 'shodanEnabled', 'shodanKey'];
+  const selectors = [
+    'highlightEnabled',
+    'detectionMode',
+    'cacheTtlMinutes',
+    'virustotalEnabled',
+    'virustotalKey',
+    'abuseipdbEnabled',
+    'abuseipdbKey',
+    'shodanEnabled',
+    'shodanKey',
+    'mispEnabled',
+    'mispBaseUrl',
+    'mispKey',
+    'mispDefaultEventId',
+    'llmEnabled',
+    'llmBaseUrl',
+    'llmKey',
+    'llmModel'
+  ];
   selectors.forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
