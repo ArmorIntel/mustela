@@ -197,7 +197,7 @@
         <strong class="section-mini">Trust & transparency</strong>
         <h2 style="margin-bottom:8px;">What stays local and what leaves the browser</h2>
         <p class="muted" style="line-height:1.55; margin-bottom:10px;">IOC detection and highlighting run locally in Chrome. Settings, API keys, cache, history, and disabled-page rules are stored in <code>chrome.storage.local</code> on this browser profile.</p>
-        <p class="muted" style="line-height:1.55; margin:0;">When you enable VirusTotal, AbuseIPDB, or Shodan lookups, the IOC you investigate is sent to that provider. This MVP does not use its own backend or cloud sync.</p>
+        <p class="muted" style="line-height:1.55; margin:0;">When you enable VirusTotal, AbuseIPDB, Shodan, MISP, or the analyst-assist LLM, the IOC you investigate is sent directly to that configured service. This MVP does not use its own backend or cloud sync.</p>
       </section>
 
       <div class="section-block">
@@ -294,6 +294,72 @@
               <li>Create an account on <a href="https://account.shodan.io/register" target="_blank" rel="noreferrer">Shodan</a>.</li>
               <li>Open your account page and copy the API key.</li>
               <li>Paste it here, then test it.</li>
+            </ol>
+          </div>
+        </details>
+      </section>
+
+      <section class="card provider-card">
+        <div class="provider-title">
+          <div class="provider-logo">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h10"></path></svg>
+          </div>
+          <div>
+            <h3>MISP</h3>
+            <p class="provider-sub">Search your MISP instance and push supported IOC into a default event.</p>
+          </div>
+        </div>
+        <div class="toggle"><span>Enable MISP</span><input id="mispEnabled" type="checkbox" /></div>
+        <label>Base URL</label>
+        <input id="mispBaseUrl" type="url" placeholder="https://misp.example.org" />
+        <label>API Key</label>
+        <input id="mispKey" type="password" placeholder="Paste your MISP automation key" />
+        <label>Default Event ID</label>
+        <input id="mispDefaultEventId" type="text" placeholder="Optional, but required for Add to MISP" />
+        <div class="provider-actions">
+          <button id="testMispBtn">Test connection</button>
+          <span id="mispTestStatus" class="api-test-status"><span class="api-test-dot"></span><span>Not tested</span></span>
+        </div>
+        <details class="advanced">
+          <summary>How to configure it <span>⌄</span></summary>
+          <div class="advanced-body">
+            <ol>
+              <li>Open your MISP profile and create or copy an automation key.</li>
+              <li>Paste the MISP base URL and the key here.</li>
+              <li>Set a default event ID if analysts should push IOC directly from Mustela.</li>
+            </ol>
+          </div>
+        </details>
+      </section>
+
+      <section class="card provider-card">
+        <div class="provider-title">
+          <div class="provider-logo">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8h12"></path><path d="M6 12h8"></path><path d="M6 16h10"></path><circle cx="18" cy="12" r="3"></circle></svg>
+          </div>
+          <div>
+            <h3>OpenAI-compatible analyst assist</h3>
+            <p class="provider-sub">Generate a short IOC score summary and a suggested next step.</p>
+          </div>
+        </div>
+        <div class="toggle"><span>Enable analyst assist</span><input id="llmEnabled" type="checkbox" /></div>
+        <label>Base URL</label>
+        <input id="llmBaseUrl" type="url" placeholder="https://api.openai.com/v1" />
+        <label>API Key</label>
+        <input id="llmKey" type="password" placeholder="Paste your OpenAI-compatible API key" />
+        <label>Model</label>
+        <input id="llmModel" type="text" placeholder="gpt-4.1-mini or your provider model id" />
+        <div class="provider-actions">
+          <button id="testLlmBtn">Test connection</button>
+          <span id="llmTestStatus" class="api-test-status"><span class="api-test-dot"></span><span>Not tested</span></span>
+        </div>
+        <details class="advanced">
+          <summary>How it is used <span>⌄</span></summary>
+          <div class="advanced-body">
+            <ol>
+              <li>Mustela computes the IOC score from the enabled threat-intel providers.</li>
+              <li>The structured investigation summary is then sent to your configured chat-completions endpoint.</li>
+              <li>The response is shown as a short analyst brief in the panel and popup history.</li>
             </ol>
           </div>
         </details>

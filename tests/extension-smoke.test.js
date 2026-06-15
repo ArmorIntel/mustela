@@ -63,6 +63,8 @@ test('popup html contains the analyst-facing sections and no raw broken tag text
   assert.match(html, /id="iocListToggleBtn"/);
   assert.match(html, /id="manualInput"/);
   assert.match(html, /id="manualInvestigateBtn"/);
+  assert.match(html, /id="insightBadge"/);
+  assert.match(html, /id="insightText"/);
   assert.match(html, /id="historyBadge"/);
   assert.match(html, /id="historyList"/);
 });
@@ -86,6 +88,8 @@ test('popup script wires manual lookup, current-page actions and history behavio
   assert.match(popup, /reopenBtn\.textContent = 'Open details'/);
   assert.match(popup, /else \{\s+const investigateBtn = createIconActionButton/s);
   assert.match(popup, /mapCurrentIocsToHistory/);
+  assert.match(popup, /renderInsight/);
+  assert.match(popup, /summarySource === 'llm'/);
   assert.match(popup, /OPEN_EXTERNAL_PROVIDER/);
   assert.match(popup, /TOGGLE_HISTORY_PIN/);
   assert.match(popup, /OPEN_INVESTIGATION_PANEL/);
@@ -108,10 +112,17 @@ test('welcome/settings expose detection mode minimally and persist through save 
   const js = fs.readFileSync(welcomeJsPath, 'utf8');
   const background = fs.readFileSync(backgroundPath, 'utf8');
   assert.match(html, /id="detectionMode"/);
+  assert.match(html, /id="mispEnabled"/);
+  assert.match(html, /id="mispBaseUrl"/);
+  assert.match(html, /id="llmEnabled"/);
+  assert.match(html, /id="llmModel"/);
   assert.match(html, /value="balanced"/);
   assert.match(html, /value="strict"/);
   assert.match(js, /getElementById\('detectionMode'\)/);
+  assert.match(js, /getElementById\('mispBaseUrl'\)/);
+  assert.match(js, /getElementById\('llmModel'\)/);
   assert.match(js, /detectionMode: document\.getElementById\('detectionMode'\)\.value === 'strict' \? 'strict' : 'balanced'/);
+  assert.match(js, /analystAssist:/);
   assert.match(background, /detectionMode: saved\.detectionMode/);
 });
 
@@ -124,7 +135,9 @@ test('background remembers investigations for fresh and cached lookups', () => {
   assert.match(background, /async function rememberInvestigation/);
   assert.match(background, /if \(cached\) \{/);
   assert.match(background, /await rememberInvestigation\(ioc, cachedInvestigation, sender\)/);
-  assert.match(background, /await rememberInvestigation\(ioc, investigation, sender\)/);
+  assert.match(background, /await rememberInvestigation\(ioc, enrichedInvestigation, sender\)/);
+  assert.match(background, /generateInvestigationSummary/);
+  assert.match(background, /ADD_IOC_TO_MISP/);
   assert.match(background, /isProviderSupportedForIoc\('abuseipdb', detected\)/);
   assert.match(background, /isProviderSupportedForIoc\('shodan', detected\)/);
 });

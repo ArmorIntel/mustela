@@ -50,6 +50,10 @@ function isExternalPivotSupported(providerId, ioc) {
   return false;
 }
 
+function isMispAddSupported(ioc) {
+  return [IOC_TYPES.IP, IOC_TYPES.DOMAIN, IOC_TYPES.URL, IOC_TYPES.MD5, IOC_TYPES.SHA1, IOC_TYPES.SHA256].includes(ioc?.type);
+}
+
 function syncManualPivotButtons(root, ioc) {
   const vtBtn = root?.querySelector('#mustela-open-vt');
   const abuseBtn = root?.querySelector('#mustela-open-abuse');
@@ -414,12 +418,27 @@ function renderProviderFields(provider) {
     if (meta.stats?.suspicious !== undefined) fields.push(['Suspicious', String(meta.stats.suspicious)]);
     if (meta.stats?.harmless !== undefined) fields.push(['Harmless', String(meta.stats.harmless)]);
   }
+  if (provider.provider === 'MISP') {
+    if (meta.matches !== undefined) fields.push(['Matches', String(meta.matches)]);
+    if (meta.eventCount !== undefined) fields.push(['Events', String(meta.eventCount)]);
+    if (meta.toIdsHits !== undefined) fields.push(['IDS', String(meta.toIdsHits)]);
+    if (meta.type) fields.push(['Type', String(meta.type)]);
+    if (meta.category) fields.push(['Category', String(meta.category)]);
+  }
   if (!fields.length) return '';
   return `<div class="mustela-provider-grid">${fields.map(([k, v]) => `<div class="mustela-provider-field"><strong>${escapeHtml(k)}</strong><span>${copyableText(v, `Copy ${k}`)}</span></div>`).join('')}</div>`;
 }
 
 function renderProviderCard(provider) {
-  const badge = provider.provider === 'VirusTotal' ? 'VT' : provider.provider === 'AbuseIPDB' ? 'AB' : provider.provider === 'Shodan' ? 'SH' : 'IOC';
+  const badge = provider.provider === 'VirusTotal'
+    ? 'VT'
+    : provider.provider === 'AbuseIPDB'
+      ? 'AB'
+      : provider.provider === 'Shodan'
+        ? 'SH'
+        : provider.provider === 'MISP'
+          ? 'MI'
+          : 'IOC';
   const isContextProvider = provider.provider === 'Shodan';
   const tone = isContextProvider ? 'neutral' : providerTone(provider.confidence);
   const statusText = provider.success ? (isContextProvider ? '' : `${provider.confidence ?? 0}/100`) : 'Unavailable';
@@ -484,6 +503,7 @@ async function bindAnalystActions(data) {
   const noteStatus = panelEl?.querySelector('#mustela-note-status');
   const copyBtn = panelEl?.querySelector('#mustela-copy-export');
   const exportBtn = panelEl?.querySelector('#mustela-download-export');
+  const mispBtn = panelEl?.querySelector('#mustela-add-misp');
   if (!historyKey || !noteField || !noteStatus || !copyBtn || !exportBtn) return;
 
   const syncButtons = () => {
@@ -529,6 +549,29 @@ async function bindAnalystActions(data) {
     exportBtn.textContent = 'Downloaded';
     window.setTimeout(() => { exportBtn.textContent = 'Download JSON'; }, 900);
   });
+
+  if (mispBtn) {
+    mispBtn.addEventListener('click', async () => {
+      mispBtn.disabled = true;
+      mispBtn.textContent = 'Adding…';
+      noteStatus.textContent = 'Submitting IOC to MISP…';
+      const response = await sendRuntimeMessage({
+        type: 'ADD_IOC_TO_MISP',
+        payload: {
+          ioc: data?.ioc,
+          comment: noteField.value
+        }
+      }, { ok: false, error: 'MISP add failed.' });
+      if (response?.ok) {
+        noteStatus.textContent = response.data?.summary || 'IOC added to MISP.';
+        mispBtn.textContent = 'Added to MISP';
+        return;
+      }
+      noteStatus.textContent = response?.error || 'MISP add failed.';
+      mispBtn.textContent = 'Add to MISP';
+      mispBtn.disabled = false;
+    });
+  }
 }
 
 function renderResult(data) {
@@ -543,6 +586,8 @@ function renderResult(data) {
   const successful = providerResults.filter((provider) => provider?.success).length;
   const degraded = providerResults.length - successful;
   const tags = Array.isArray(data.tags) ? data.tags.slice(0, 4) : [];
+  const llmSummary = data.llmSummary || {};
+  const canAddToMisp = isMispAddSupported(data?.ioc);
   result.innerHTML = `
     <div class="mustela-summary-shell" style="display:grid;gap:10px;">
       <div style="padding:12px 14px;border-radius:18px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);">
@@ -562,7 +607,18 @@ function renderResult(data) {
       <div style="padding:12px 14px;border-radius:18px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);">
         <div style="font-size:12px;opacity:.75;text-transform:uppercase;letter-spacing:.05em;">Threat summary</div>
         ${threatSummary.narrative ? `<div style="margin-top:6px;opacity:.9;font-weight:600;">${copyableText(threatSummary.narrative, 'Copy threat summary narrative')}</div>` : ''}
+        ${summaryEvidence.length ? `<div style="margin-top:8px;font-size:12px;opacity:.78;">${summaryEvidence.map((item) => copyableText(item, 'Copy supporting signal')).join(' · ')}</div>` : ''}
       </div>
+      ${llmSummary.summary || llmSummary.error ? `
+        <div style="padding:12px 14px;border-radius:18px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+            <div style="font-size:12px;opacity:.75;text-transform:uppercase;letter-spacing:.05em;">Analyst assist</div>
+            <span class="mustela-provider-kind context">${escapeHtml(llmSummary.summary ? `LLM · ${llmSummary.model || 'summary'}` : 'Unavailable')}</span>
+          </div>
+          <div style="margin-top:6px;opacity:.9;font-weight:600;">${llmSummary.summary ? copyableText(llmSummary.summary, 'Copy AI brief') : escapeHtml(llmSummary.error || 'AI summary unavailable.')}</div>
+          ${llmSummary.action ? `<div style="margin-top:8px;font-size:12px;opacity:.78;"><strong>Suggested next step:</strong> ${copyableText(llmSummary.action, 'Copy AI next step')}</div>` : ''}
+        </div>
+      ` : ''}
       <div style="padding:12px 14px;border-radius:18px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);">
         <div>${copyableText(recommendation.title || 'Recommendation unavailable', 'Copy recommendation title')}</div>
         ${recommendation.summary ? `<div style="margin-top:6px;opacity:.9;">${copyableText(recommendation.summary, 'Copy recommendation summary')}</div>` : ''}
@@ -571,6 +627,7 @@ function renderResult(data) {
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="secondary" id="mustela-rerun">Re-run</button>
+        ${canAddToMisp ? '<button class="secondary" id="mustela-add-misp">Add to MISP</button>' : ''}
         <button class="secondary" id="mustela-copy-export">Copy export</button>
         <button class="secondary" id="mustela-download-export">Download JSON</button>
       </div>

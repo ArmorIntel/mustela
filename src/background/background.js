@@ -1,5 +1,6 @@
 import { buildThreatSummary, detectSingleIoc, summarizeProviderVerdict } from '../shared/ioc.js';
-import { isProviderSupportedForIoc, PROVIDERS } from '../providers/providers.js';
+import { generateInvestigationSummary, validateOpenAiCompatibleConfig } from '../integrations/assistants.js';
+import { addIocToMisp, isProviderSupportedForIoc, PROVIDERS } from '../providers/providers.js';
 import { addHistory, clearCache, clearDisabledPages, clearHistory, getCachedResult, getDetectedForTab, getHistory, getHistoryEntry, getSettings, isPageDisabled, saveDetectedForTab, saveHistoryNote, saveSettings, setCachedResult, setPageDisabled, toggleHistoryPin } from '../storage/storage.js';
 
 chrome.runtime.onInstalled.addListener((details) => {
@@ -155,12 +156,25 @@ async function handleMessage(message, sender) {
       await clearDisabledPages();
       return { ok: true };
     case 'TEST_API_KEY': {
-      const provider = PROVIDERS[message.payload?.provider];
-      const apiKey = (message.payload?.apiKey || '').trim();
+      const providerId = message.payload?.provider;
+      if (providerId === 'llm') {
+        const result = await validateOpenAiCompatibleConfig(message.payload);
+        return { ok: true, data: { valid: !!result.ok, limited: !!result.limited, message: result.message || (result.ok ? 'Connection valid' : 'Validation failed') } };
+      }
+      const provider = PROVIDERS[providerId];
       if (!provider || !provider.validateApiKey) return { ok: false, error: 'Unsupported provider' };
-      if (!apiKey) return { ok: true, data: { valid: false, message: 'Missing API key' } };
-      const result = await provider.validateApiKey(apiKey);
+      const result = await provider.validateApiKey(message.payload);
       return { ok: true, data: { valid: !!result.ok, limited: !!result.limited, message: result.message || (result.ok ? 'API key valid' : 'Invalid API key') } };
+    }
+    case 'ADD_IOC_TO_MISP': {
+      const settings = await getSettings();
+      const ioc = message.payload?.ioc;
+      if (!ioc?.normalized || !ioc?.type) return { ok: false, error: 'Invalid IOC' };
+      const result = await addIocToMisp(ioc, settings.providers?.misp || {}, {
+        eventId: message.payload?.eventId,
+        comment: message.payload?.comment
+      });
+      return { ok: true, data: result };
     }
     default:
       return { ok: false, error: 'Unknown message type' };
@@ -175,6 +189,7 @@ function humanizeProviderError(error, providerName) {
   if (status === 401) return `${provider} rejected the API key.`;
   if (status === 403) {
     if (provider === 'Shodan') return 'Shodan access denied. Your API key may be valid, but this lookup can require additional access or credits.';
+    if (provider === 'MISP' && error?.context === 'add') return 'MISP denied the add request. Check event permissions or the API key role.';
     return `${provider} denied access to this lookup.`;
   }
   if (status === 404) return `${provider} has no result for this IOC.`;
@@ -187,7 +202,15 @@ function providerPriority(providerResult) {
   const configured = !/API key not configured/i.test(String(providerResult?.error || ''));
   const success = !!providerResult?.success;
   const confidence = Number(providerResult?.confidence || providerResult?.meta?.abuseConfidenceScore || 0);
-  const providerBias = providerResult?.provider === 'AbuseIPDB' ? 3 : providerResult?.provider === 'VirusTotal' ? 2 : providerResult?.provider === 'Shodan' ? 1 : 0;
+  const providerBias = providerResult?.provider === 'AbuseIPDB'
+    ? 4
+    : providerResult?.provider === 'VirusTotal'
+      ? 3
+      : providerResult?.provider === 'MISP'
+        ? 2
+        : providerResult?.provider === 'Shodan'
+          ? 1
+          : 0;
   return {
     configured,
     success,
@@ -211,6 +234,9 @@ function sortProviderResults(results) {
 async function rememberInvestigation(ioc, investigation, sender = {}) {
   const pageUrl = ioc?.sourceContext?.pageUrl || sender?.tab?.url || '';
   const pageTitle = ioc?.sourceContext?.pageTitle || sender?.tab?.title || '';
+  const llmSummary = investigation?.llmSummary || {};
+  const summaryText = llmSummary.summary || investigation?.threatSummary?.narrative || investigation?.explanation || '';
+  const actionText = llmSummary.action || investigation?.recommendation?.action || '';
   await addHistory({
     ioc: {
       ...ioc,
@@ -224,6 +250,10 @@ async function rememberInvestigation(ioc, investigation, sender = {}) {
     },
     overallVerdict: investigation.overallVerdict,
     score: investigation.score,
+    summaryText,
+    summarySource: llmSummary.summary ? 'llm' : 'builtin',
+    actionText,
+    actionSource: llmSummary.action ? 'llm' : 'builtin',
     timestamp: investigation.timestamp || new Date().toISOString(),
     pageUrl,
     pageTitle
@@ -233,12 +263,42 @@ async function rememberInvestigation(ioc, investigation, sender = {}) {
 function buildProviderCacheProfile(settings = {}) {
   const providers = settings.providers || {};
   return JSON.stringify({
-    schema: 1,
+    schema: 2,
     providers: Object.fromEntries(Object.entries(providers).map(([providerId, providerSettings]) => [providerId, {
       enabled: !!providerSettings?.enabled,
-      hasKey: !!String(providerSettings?.apiKey || '').trim()
-    }]))
+      hasKey: !!String(providerSettings?.apiKey || '').trim(),
+      baseUrl: String(providerSettings?.baseUrl || '').trim(),
+      defaultEventId: String(providerSettings?.defaultEventId || '').trim()
+    }])),
+    analystAssist: {
+      enabled: !!settings?.analystAssist?.enabled,
+      hasKey: !!String(settings?.analystAssist?.apiKey || '').trim(),
+      baseUrl: String(settings?.analystAssist?.baseUrl || '').trim(),
+      model: String(settings?.analystAssist?.model || '').trim()
+    }
   });
+}
+
+async function maybeAttachLlmSummary(settings, investigation) {
+  const llm = settings?.analystAssist || {};
+  if (!llm.enabled || !llm.baseUrl || !llm.apiKey || !llm.model) return investigation;
+
+  try {
+    const summary = await generateInvestigationSummary(investigation, llm);
+    return {
+      ...investigation,
+      llmSummary: summary
+    };
+  } catch (error) {
+    return {
+      ...investigation,
+      llmSummary: {
+        provider: 'OpenAI-compatible',
+        model: String(llm.model || '').trim(),
+        error: humanizeProviderError(error, 'LLM')
+      }
+    };
+  }
 }
 
 async function lookupIoc(ioc, sender = {}) {
@@ -262,18 +322,23 @@ async function lookupIoc(ioc, sender = {}) {
     const providerSettings = settings.providers?.[providerId];
     if (!providerSettings?.enabled) continue;
     if (!provider.supportedTypes.includes(ioc.type)) continue;
-    if (!providerSettings?.apiKey) {
+    const configured = typeof provider.isConfigured === 'function'
+      ? provider.isConfigured(providerSettings)
+      : !!providerSettings?.apiKey;
+    if (!configured) {
       results.push({
         provider: provider.name,
         success: false,
-        summary: 'API key not configured — external lookup available',
-        error: 'API key not configured',
+        summary: providerId === 'misp'
+          ? 'MISP not configured — set base URL and API key'
+          : 'API key not configured — external lookup available',
+        error: providerId === 'misp' ? 'MISP not configured' : 'API key not configured',
         externalUrl: provider.buildExternalUrl ? provider.buildExternalUrl(ioc) : undefined
       });
       continue;
     }
     try {
-      const result = await provider.lookup(ioc, providerSettings.apiKey);
+      const result = await provider.lookup(ioc, providerSettings);
       results.push({ timestamp: new Date().toISOString(), ...result });
     } catch (error) {
       const humanMessage = humanizeProviderError(error, provider.name);
@@ -290,10 +355,11 @@ async function lookupIoc(ioc, sender = {}) {
     ...summary,
     timestamp: new Date().toISOString()
   };
-  const cacheWrite = await setCachedResult(cacheKey, investigation);
-  await rememberInvestigation(ioc, investigation, sender);
+  const enrichedInvestigation = await maybeAttachLlmSummary(settings, investigation);
+  const cacheWrite = await setCachedResult(cacheKey, enrichedInvestigation);
+  await rememberInvestigation(ioc, enrichedInvestigation, sender);
   if (cacheWrite && cacheWrite.quota) {
-    investigation.storageWarning = 'Cache storage limit reached. Results are shown, but long-term cache was reduced.';
+    enrichedInvestigation.storageWarning = 'Cache storage limit reached. Results are shown, but long-term cache was reduced.';
   }
-  return investigation;
+  return enrichedInvestigation;
 }
