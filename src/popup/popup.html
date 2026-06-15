@@ -91,6 +91,13 @@
     .history-main strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .history-meta { margin-top: 2px; color: var(--muted); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    .correlation-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+    .correlation-btn { width: auto; height: auto; min-width: 54px; padding: 7px 12px; border-radius: 999px; font-size: 11px; font-weight: 700; color: var(--accent); }
+    .correlation-card { margin-top: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(37,99,235,.06); border: 1px solid rgba(37,99,235,.18); font-size: 12px; }
+    .correlation-verdict { font-weight: 700; color: var(--text); margin-bottom: 3px; }
+    .correlation-patterns { margin: 5px 0 3px 14px; padding: 0; color: var(--muted); line-height: 1.45; }
+    .correlation-patterns li { margin-bottom: 2px; }
+    .correlation-action { margin-top: 6px; color: var(--muted); font-style: italic; line-height: 1.35; }
   </style>
 </head>
 <body>
@@ -161,6 +168,10 @@
       <div id="historyShortcuts" class="history-shortcuts"></div>
       <div id="historyFilters" class="history-filters"></div>
       <ul id="historyList" class="history-list"></ul>
+      <div class="correlation-trigger">
+        <button id="correlateBtn" class="correlation-btn" type="button" disabled>Correlate with AI</button>
+      </div>
+      <div id="correlationResult" class="correlation-card" hidden></div>
     </section>
   </main>
   <script type="module" src="./popup.js"></script>

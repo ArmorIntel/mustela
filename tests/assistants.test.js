@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateInvestigationSummary, validateOpenAiCompatibleConfig } from '../src/integrations/assistants.js';
+import { generateCorrelationAnalysis, generateInvestigationSummary, validateOpenAiCompatibleConfig } from '../src/integrations/assistants.js';
 
 function withMockFetch(handler, run) {
   const originalFetch = global.fetch;
@@ -47,7 +47,7 @@ test('OpenAI-compatible summary posts a chat completion request and normalizes J
     const body = JSON.parse(options.body);
     assert.equal(body.model, 'soc-mini');
     assert.equal(body.temperature, 0.2);
-    assert.equal(body.max_tokens, 220);
+    assert.equal(body.max_tokens, 300);
     assert.equal(Array.isArray(body.messages), true);
     assert.equal(body.messages.length, 2);
     return {
@@ -227,5 +227,148 @@ test('OpenAI-compatible validation succeeds without model check when model is om
     assert.equal(result.ok, true);
     assert.equal(result.limited, false);
     assert.match(result.message, /Connection valid/i);
+  });
+});
+
+test('prompt includes pageContext and tailored action instruction when sourceContext is present', async () => {
+  await withMockFetch(async (_url, options = {}) => {
+    const body = JSON.parse(options.body);
+    const userContent = JSON.parse(body.messages[1].content);
+    assert.ok(userContent.investigation.pageContext, 'pageContext should be present');
+    assert.equal(userContent.investigation.pageContext.url, 'https://siem.corp/alert/123');
+    assert.equal(userContent.investigation.pageContext.title, 'SIEM Alert #123');
+    assert.match(userContent.instructions.action, /SIEM Alert #123/);
+    return {
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ message: { content: '{"summary":"Suspicious.","action":"Check logs."}' } }] })
+    };
+  }, async () => {
+    await generateInvestigationSummary({
+      ioc: { normalized: '1.2.3.4', type: 'ip', sourceContext: { pageUrl: 'https://siem.corp/alert/123', pageTitle: 'SIEM Alert #123' } },
+      providerResults: []
+    }, { baseUrl: 'https://api.example.com/v1', apiKey: 'key', model: 'gpt-4o' });
+  });
+});
+
+test('prompt flags provider conflict when providers return opposing verdicts', async () => {
+  await withMockFetch(async (_url, options = {}) => {
+    const body = JSON.parse(options.body);
+    const userContent = JSON.parse(body.messages[1].content);
+    const conflict = userContent.investigation.providerConflict;
+    assert.ok(conflict, 'providerConflict should be present');
+    assert.deepEqual(conflict.threat, ['VirusTotal']);
+    assert.deepEqual(conflict.clean, ['AbuseIPDB']);
+    assert.match(userContent.instructions.action, /disagree/i);
+    assert.match(userContent.instructions.action, /VirusTotal/);
+    assert.match(userContent.instructions.action, /AbuseIPDB/);
+    return {
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ message: { content: '{"summary":"Conflicting signals.","action":"Resolve conflict via proxy logs."}' } }] })
+    };
+  }, async () => {
+    await generateInvestigationSummary({
+      ioc: { normalized: 'evil.example', type: 'domain' },
+      providerResults: [
+        { provider: 'VirusTotal', success: true, verdict: 'malicious', confidence: 80, summary: '12 detections' },
+        { provider: 'AbuseIPDB', success: true, verdict: 'clean', confidence: 90, summary: '0 reports' }
+      ]
+    }, { baseUrl: 'https://api.example.com/v1', apiKey: 'key', model: 'gpt-4o' });
+  });
+});
+
+test('prompt omits providerConflict when all successful providers agree', async () => {
+  await withMockFetch(async (_url, options = {}) => {
+    const body = JSON.parse(options.body);
+    const userContent = JSON.parse(body.messages[1].content);
+    assert.equal(userContent.investigation.providerConflict, undefined, 'providerConflict should be absent when providers agree');
+    return {
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ message: { content: '{"summary":"Malicious.","action":"Block it."}' } }] })
+    };
+  }, async () => {
+    await generateInvestigationSummary({
+      ioc: { normalized: 'evil.example', type: 'domain' },
+      providerResults: [
+        { provider: 'VirusTotal', success: true, verdict: 'malicious', confidence: 80, summary: '12 detections' },
+        { provider: 'AbuseIPDB', success: true, verdict: 'suspicious', confidence: 60, summary: '3 reports' }
+      ]
+    }, { baseUrl: 'https://api.example.com/v1', apiKey: 'key', model: 'gpt-4o' });
+  });
+});
+
+const SAMPLE_ENTRIES = [
+  { normalized: '1.2.3.4', type: 'ip', overallVerdict: 'malicious', score: 85, tags: ['proxy'], seenCount: 3, pageUrl: 'https://siem.corp/alert/1', pageTitle: 'Alert #1' },
+  { normalized: '5.6.7.8', type: 'ip', overallVerdict: 'suspicious', score: 60, tags: ['proxy', 'vpn'], seenCount: 1, pageUrl: 'https://siem.corp/alert/2', pageTitle: 'Alert #2' }
+];
+
+test('correlation analysis sends structured prompt and normalizes output', async () => {
+  await withMockFetch(async (_url, options = {}) => {
+    assert.equal(_url, 'https://api.example.com/v1/chat/completions');
+    const body = JSON.parse(options.body);
+    assert.equal(body.model, 'soc-mini');
+    assert.equal(body.max_tokens, 450);
+    const userContent = JSON.parse(body.messages[1].content);
+    assert.equal(userContent.correlationSet.totalIocs, 2);
+    assert.equal(userContent.correlationSet.iocs[0].ioc, '1.2.3.4');
+    assert.match(userContent.instructions.patterns, /pattern/i);
+    return {
+      ok: true, status: 200,
+      json: async () => ({
+        choices: [{ message: { content: '{"patterns":["Both IPs share proxy tags and high scores."],"verdict":"likely related","action":"Block both IPs at the perimeter and pivot to ASN."}' } }]
+      })
+    };
+  }, async () => {
+    const result = await generateCorrelationAnalysis(SAMPLE_ENTRIES, {
+      baseUrl: 'https://api.example.com/v1', apiKey: 'key', model: 'soc-mini'
+    });
+    assert.equal(result.iocCount, 2);
+    assert.equal(result.patterns.length, 1);
+    assert.match(result.patterns[0], /proxy/i);
+    assert.match(result.verdict, /related/i);
+    assert.match(result.action, /ASN/i);
+    assert.equal(result.provider, 'OpenAI-compatible');
+  });
+});
+
+test('correlation analysis includes page context in the prompt when provided', async () => {
+  await withMockFetch(async (_url, options = {}) => {
+    const body = JSON.parse(options.body);
+    const userContent = JSON.parse(body.messages[1].content);
+    assert.ok(userContent.correlationSet.analystCurrentPage, 'analystCurrentPage should be present');
+    assert.equal(userContent.correlationSet.analystCurrentPage.url, 'https://siem.corp/dashboard');
+    return {
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ message: { content: '{"patterns":[],"verdict":"independent","action":"No action needed."}' } }] })
+    };
+  }, async () => {
+    await generateCorrelationAnalysis(SAMPLE_ENTRIES, {
+      baseUrl: 'https://api.example.com/v1', apiKey: 'key', model: 'gpt-4o'
+    }, { pageUrl: 'https://siem.corp/dashboard', pageTitle: 'SIEM Dashboard' });
+  });
+});
+
+test('correlation analysis throws when fewer than 2 entries are provided', async () => {
+  await assert.rejects(
+    () => generateCorrelationAnalysis(
+      [{ normalized: '1.2.3.4', type: 'ip' }],
+      { baseUrl: 'https://api.example.com/v1', apiKey: 'key', model: 'gpt-4o' }
+    ),
+    /at least 2 IOCs/i
+  );
+});
+
+test('correlation analysis throws a structured error on HTTP failure', async () => {
+  await withMockFetch(async () => ({ ok: false, status: 429 }), async () => {
+    await assert.rejects(
+      () => generateCorrelationAnalysis(SAMPLE_ENTRIES, {
+        baseUrl: 'https://api.example.com/v1', apiKey: 'key', model: 'gpt-4o'
+      }),
+      (err) => {
+        assert.equal(err.provider, 'LLM');
+        assert.equal(err.status, 429);
+        assert.equal(err.context, 'correlation');
+        return true;
+      }
+    );
   });
 });
