@@ -191,3 +191,181 @@ test('MISP add posts a supported attribute into the configured event', async () 
     assert.equal(result.attributeUrl, 'https://misp.example.org/attributes/view/99');
   });
 });
+
+test('MISP add falls back to event URL when the response contains no attribute id', async () => {
+  await withMockFetch(async () => ({
+    ok: true,
+    json: async () => ({ response: {} })
+  }), async () => {
+    const result = await addIocToMisp({ type: IOC_TYPES.SHA256, normalized: 'abc123' }, {
+      baseUrl: 'https://misp.example.org',
+      apiKey: 'misp-key',
+      defaultEventId: '42'
+    }, {});
+    assert.equal(result.ok, true);
+    assert.equal(result.attributeId, '');
+    assert.equal(result.attributeUrl, 'https://misp.example.org/events/view/42');
+  });
+});
+
+test('MISP add throws on HTTP error from the MISP server', async () => {
+  await withMockFetch(async () => ({ ok: false, status: 403 }), async () => {
+    await assert.rejects(
+      () => addIocToMisp({ type: IOC_TYPES.IP, normalized: '1.2.3.4' }, {
+        baseUrl: 'https://misp.example.org',
+        apiKey: 'bad-key',
+        defaultEventId: '1'
+      }, {}),
+      (err) => {
+        assert.equal(err.provider, 'MISP');
+        assert.equal(err.status, 403);
+        assert.equal(err.context, 'add');
+        return true;
+      }
+    );
+  });
+});
+
+test('MISP add throws when eventId is missing from both options and config', async () => {
+  await assert.rejects(
+    () => addIocToMisp({ type: IOC_TYPES.DOMAIN, normalized: 'evil.example' }, {
+      baseUrl: 'https://misp.example.org',
+      apiKey: 'misp-key'
+    }, {}),
+    /event ID not configured/i
+  );
+});
+
+test('MISP add throws when baseUrl is missing', async () => {
+  await assert.rejects(
+    () => addIocToMisp({ type: IOC_TYPES.IP, normalized: '1.2.3.4' }, { apiKey: 'key' }, { eventId: '1' }),
+    /base URL not configured/i
+  );
+});
+
+test('MISP add throws for IOC types that have no attribute template (ASN, subnet)', async () => {
+  await assert.rejects(
+    () => addIocToMisp({ type: IOC_TYPES.ASN, normalized: 'AS13335' }, {
+      baseUrl: 'https://misp.example.org',
+      apiKey: 'misp-key',
+      defaultEventId: '1'
+    }, {}),
+    /not supported for MISP add/i
+  );
+});
+
+test('MISP lookup returns clean verdict with zero confidence when no attributes are found', async () => {
+  await withMockFetch(async () => ({
+    ok: true,
+    json: async () => ({ response: { Attribute: [] } })
+  }), async () => {
+    const result = await PROVIDERS.misp.lookup({ type: IOC_TYPES.IP, normalized: '1.2.3.4' }, {
+      baseUrl: 'https://misp.example.org',
+      apiKey: 'misp-key'
+    });
+    assert.equal(result.verdict, 'clean');
+    assert.equal(result.confidence, 0);
+    assert.equal(result.meta.matches, 0);
+    assert.match(result.summary, /No matching attribute/i);
+  });
+});
+
+test('MISP lookup for IP sends both ip-src and ip-dst types', async () => {
+  let capturedBody;
+  await withMockFetch(async (url, options = {}) => {
+    capturedBody = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ response: { Attribute: [] } }) };
+  }, async () => {
+    await PROVIDERS.misp.lookup({ type: IOC_TYPES.IP, normalized: '8.8.8.8' }, {
+      baseUrl: 'https://misp.example.org',
+      apiKey: 'misp-key'
+    });
+    assert.deepEqual(capturedBody.type, ['ip-src', 'ip-dst']);
+    assert.equal(capturedBody.value, '8.8.8.8');
+  });
+});
+
+test('MISP lookup for SHA256 sends a single attribute type', async () => {
+  let capturedBody;
+  await withMockFetch(async (url, options = {}) => {
+    capturedBody = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ response: { Attribute: [] } }) };
+  }, async () => {
+    await PROVIDERS.misp.lookup({ type: IOC_TYPES.SHA256, normalized: 'a'.repeat(64) }, {
+      baseUrl: 'https://misp.example.org',
+      apiKey: 'misp-key'
+    });
+    assert.equal(capturedBody.type, 'sha256');
+  });
+});
+
+test('MISP lookup throws a structured error on HTTP failure', async () => {
+  await withMockFetch(async () => ({ ok: false, status: 401 }), async () => {
+    await assert.rejects(
+      () => PROVIDERS.misp.lookup({ type: IOC_TYPES.DOMAIN, normalized: 'evil.example' }, {
+        baseUrl: 'https://misp.example.org',
+        apiKey: 'bad-key'
+      }),
+      (err) => {
+        assert.equal(err.provider, 'MISP');
+        assert.equal(err.status, 401);
+        return true;
+      }
+    );
+  });
+});
+
+test('MISP validate returns ok when the server version endpoint is reachable', async () => {
+  await withMockFetch(async (url, options = {}) => {
+    assert.match(url, /\/servers\/getVersion$/);
+    assert.equal(options.headers.Authorization, 'misp-key');
+    return { ok: true, status: 200, json: async () => ({ version: '2.4.170' }) };
+  }, async () => {
+    const result = await PROVIDERS.misp.validateApiKey({ baseUrl: 'https://misp.example.org', apiKey: 'misp-key' });
+    assert.equal(result.ok, true);
+    assert.match(result.message, /valid/i);
+  });
+});
+
+test('MISP validate reports invalid key on 401', async () => {
+  await withMockFetch(async () => ({ ok: false, status: 401 }), async () => {
+    const result = await PROVIDERS.misp.validateApiKey({ baseUrl: 'https://misp.example.org', apiKey: 'bad' });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /Invalid API key/i);
+  });
+});
+
+test('MISP validate fails fast when baseUrl is missing', async () => {
+  const result = await PROVIDERS.misp.validateApiKey({ apiKey: 'misp-key' });
+  assert.equal(result.ok, false);
+  assert.match(result.message, /base URL/i);
+});
+
+test('MISP validate fails fast when apiKey is missing', async () => {
+  const result = await PROVIDERS.misp.validateApiKey({ baseUrl: 'https://misp.example.org' });
+  assert.equal(result.ok, false);
+  assert.match(result.message, /API key/i);
+});
+
+test('MISP isConfigured returns true only when both baseUrl and apiKey are present', () => {
+  assert.equal(PROVIDERS.misp.isConfigured({ baseUrl: 'https://misp.example.org', apiKey: 'key' }), true);
+  assert.equal(PROVIDERS.misp.isConfigured({ baseUrl: 'https://misp.example.org', apiKey: '' }), false);
+  assert.equal(PROVIDERS.misp.isConfigured({ baseUrl: '', apiKey: 'key' }), false);
+  assert.equal(PROVIDERS.misp.isConfigured({}), false);
+});
+
+test('MISP is excluded from getSupportedExternalProviders because it is an internal provider', () => {
+  const external = getSupportedExternalProviders({ type: IOC_TYPES.DOMAIN, normalized: 'evil.example' });
+  assert.equal(external.includes('misp'), false);
+});
+
+test('MISP is supported for IP, DOMAIN, URL, MD5, SHA1 and SHA256 but not ASN or SUBNET', () => {
+  const supported = [IOC_TYPES.IP, IOC_TYPES.DOMAIN, IOC_TYPES.URL, IOC_TYPES.MD5, IOC_TYPES.SHA1, IOC_TYPES.SHA256];
+  const unsupported = [IOC_TYPES.ASN, IOC_TYPES.SUBNET];
+  for (const type of supported) {
+    assert.equal(isProviderSupportedForIoc('misp', { type }), true, `expected MISP to support ${type}`);
+  }
+  for (const type of unsupported) {
+    assert.equal(isProviderSupportedForIoc('misp', { type }), false, `expected MISP to not support ${type}`);
+  }
+});
