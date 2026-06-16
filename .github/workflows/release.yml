@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm run pack:zip
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip
+          generate_release_notes: true
+          body: |
+            ## Installation
+
+            **No build required.** Download the zip below, then:
+
+            1. Unzip the file anywhere on your computer
+            2. Open **chrome://extensions** in Chrome
+            3. Enable **Developer mode** (toggle in the top-right corner)
+            4. Click **Load unpacked** and select the unzipped folder
+
+            The Mustela icon appears in your toolbar. Right-click it → **Options** to add your provider API keys.
+
+            See the [README](https://github.com/ArmorIntel/mustela#readme) for the full setup guide.
