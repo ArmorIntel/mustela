@@ -1,6 +1,7 @@
 # Mustela
 
 [![CI](https://github.com/ArmorIntel/mustela/actions/workflows/ci.yml/badge.svg)](https://github.com/ArmorIntel/mustela/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ArmorIntel/mustela)](https://github.com/ArmorIntel/mustela/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Chrome MV3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4?logo=googlechrome&logoColor=white)](manifest/chrome.manifest.json)
 
@@ -21,43 +22,40 @@ SOC workflows are full of repetitive pivots:
 
 Mustela reduces that friction and keeps the investigation loop inside the browser.
 
-## Features
-
-- **Detect IOC directly on a page**: IPv4, subnets, ASN, domains, URLs, MD5 / SHA1 / SHA256
-- **Highlight detected IOC** without breaking the host page
-- **In-page investigation panel** with one click on any highlighted IOC
-- **Aggregated provider verdicts** (VirusTotal, AbuseIPDB, Shodan) in a single analyst-friendly view
-- **Quick external pivots** to open an IOC on the provider's own site
-- **Manual lookup** of any IOC from the popup or the in-page panel
-- **Local history, cache, and analyst notes** — everything stays in your browser
-- **Context-menu lookup** for selected text
-- **Per-page disable toggle** for pages where highlighting gets in the way
-
-Everything runs locally in the browser. The only network calls are the lookups you explicitly enable toward the providers you configure.
-
-## Screenshots
-
-**IOC detected and highlighted directly on the page:**
-
-![IOC highlighted on a page](docs/screenshots/01-page-highlights.png)
-
-**One click on a highlight opens the in-page investigation panel:**
-
-![In-page investigation panel](docs/screenshots/02-page-panel.png)
-
-**The popup summarizes the current page, offers manual lookup, and keeps your recent investigations:**
-
-<img src="docs/screenshots/03-popup-history.png" alt="Popup with current-page summary and history" width="380">
+---
 
 ## Installation
 
-### Prerequisites
+### Option A — Download a pre-built release (recommended, no build tools needed)
 
-- [Google Chrome](https://www.google.com/chrome/) (or any Chromium-based browser supporting Manifest V3)
-- [Node.js](https://nodejs.org/) 18 or newer (only needed to build; `npm` is included)
-- [Git](https://git-scm.com/)
+1. Go to the [latest release](https://github.com/ArmorIntel/mustela/releases/latest)
+2. Download the `mustela-vX.X.X-chrome.zip` file
+3. Unzip it anywhere on your computer
+4. Open **`chrome://extensions`** in Chrome
+5. Enable **Developer mode** — toggle in the top-right corner
 
-### Step 1 — Get the code and build
+   ![Developer mode toggle location](docs/screenshots/install-dev-mode.png)
+
+6. Click **Load unpacked** and select the folder you just unzipped
+7. The Mustela icon appears in your toolbar — you are done
+
+> **Tip:** Chrome may warn that the extension is from an unknown source. This is normal for extensions loaded outside the Chrome Web Store. The extension is open-source — you can inspect every line of code in this repository.
+
+---
+
+### Option B — One-liner (builds from source automatically)
+
+If you have **Git** and **Node.js 18+** installed, run this in a terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ArmorIntel/mustela/main/install.sh | bash
+```
+
+The script clones the repo, installs dependencies, builds the extension, and prints the exact path to paste into Chrome's **Load unpacked** dialog.
+
+---
+
+### Option C — Manual build from source
 
 ```bash
 git clone https://github.com/ArmorIntel/mustela.git
@@ -66,68 +64,222 @@ npm install
 npm run build
 ```
 
-The build output lands in `dist/chrome`.
+Then load `dist/chrome` with **Load unpacked** in `chrome://extensions` (same steps 4–7 above).
 
-### Step 2 — Load the extension in Chrome
+---
 
-1. Open `chrome://extensions` in Chrome
-2. Turn on **Developer mode** (toggle in the top-right corner)
-3. Click **Load unpacked**
-4. Select the `dist/chrome` folder inside the project
+## Setting up providers
 
-That's it — the Mustela icon appears in your toolbar and a welcome page opens to guide you through setup.
+Mustela detects and highlights IOC out of the box — no API keys required.
 
-### Step 3 (optional) — Add provider API keys
+To get **enriched verdicts** (reputation scores, scan results, exposed-service data) inside the in-page panel, connect one or more free provider accounts.
 
-Mustela works out of the box for detection, highlighting, and external pivots. To get enriched verdicts inside the panel, add free API keys on the extension's setup page (right-click the Mustela icon → **Options**):
+### How to open the Options page
 
-| Provider | Free key | Used for |
-|---|---|---|
-| [VirusTotal](https://www.virustotal.com/gui/my-apikey) | Yes (account required) | File hashes, domains, URLs, IPs |
-| [AbuseIPDB](https://www.abuseipdb.com/account/api) | Yes (account required) | IP reputation |
-| [Shodan](https://account.shodan.io/) | Yes (account required) | Exposed-service context for IPs |
+Right-click the Mustela icon in your toolbar → **Options**. Or go to `chrome://extensions`, find Mustela, and click **Details → Extension options**.
 
-If a provider is not configured, Mustela stays fully usable and still offers external pivots.
+---
 
-## Usage
+### VirusTotal
 
-1. Open any page containing indicators (SIEM, ticket, CTI report, email…)
-2. Mustela detects and highlights IOC automatically
+VirusTotal aggregates results from 70+ antivirus engines and provides reputation data for IPs, domains, URLs, and file hashes.
+
+1. Create a free account at [virustotal.com](https://www.virustotal.com/gui/join-us)
+2. Go to your [API key page](https://www.virustotal.com/gui/my-apikey)
+3. Copy your **API Key**
+4. Paste it into the **VirusTotal** field in Mustela's Options page
+
+Free tier: 4 requests/minute, 500 requests/day. Sufficient for analyst workflows.
+
+---
+
+### AbuseIPDB
+
+AbuseIPDB is a crowd-sourced database of reported malicious IP addresses.
+
+1. Create a free account at [abuseipdb.com](https://www.abuseipdb.com/register)
+2. Go to [Account → API](https://www.abuseipdb.com/account/api)
+3. Click **Create Key**, give it a name, and copy the key
+4. Paste it into the **AbuseIPDB** field in Mustela's Options page
+
+Free tier: 1,000 requests/day. More than enough for daily analyst use.
+
+---
+
+### Shodan
+
+Shodan scans the internet for exposed services and devices. Useful for enriching IP addresses with port, service, and banner data.
+
+1. Create a free account at [shodan.io](https://account.shodan.io/register)
+2. Log in and go to [My Account](https://account.shodan.io/)
+3. Copy the **API Key** shown on the page
+4. Paste it into the **Shodan** field in Mustela's Options page
+
+Free tier: limited to basic queries (no historical data or filters). Covers standard IP lookups.
+
+---
+
+If a provider is not configured, Mustela remains fully functional for detection, highlighting, and external pivots — it just will not display enriched data for that provider.
+
+---
+
+## Features
+
+### IOC detection
+
+Mustela automatically detects the following indicator types on any page:
+
+| Type | Examples |
+|---|---|
+| IPv4 address | `192.168.1.1`, `8.8.8.8` |
+| IPv4 subnet | `10.0.0.0/8` |
+| ASN | `AS15169` |
+| Domain | `evil.example.com` |
+| URL | `http://malware.example.com/payload` |
+| MD5 hash | `d41d8cd98f00b204e9800998ecf8427e` |
+| SHA1 hash | `da39a3ee5e6b4b0d3255bfef95601890afd80709` |
+| SHA256 hash | `e3b0c44298fc1c149afb...` |
+
+Detection runs locally in the browser — no data leaves your machine at this stage.
+
+---
+
+### Page highlighting
+
+**IOC detected and highlighted directly on the page:**
+
+![IOC highlighted on a page](docs/screenshots/01-page-highlights.png)
+
+Detected IOC are underlined with a color-coded marker directly on the page. The host page layout and behavior are not affected. You can disable highlighting per-page at any time using the **Disable on this page** toggle in the popup.
+
+---
+
+### In-page investigation panel
+
+**One click on a highlight opens the investigation panel:**
+
+![In-page investigation panel](docs/screenshots/02-page-panel.png)
+
+Clicking any highlighted IOC opens a side panel anchored to the page. The panel shows:
+
+- The IOC type and value
+- Aggregated verdicts from all configured providers
+- Quick-pivot links to open the IOC on each provider's site
+- A local analyst note field (stored only in your browser)
+- A JSON export of the full result
+
+---
+
+### Popup — manual lookup and history
+
+**The popup summarizes the current page and keeps your recent investigations:**
+
+<img src="docs/screenshots/03-popup-history.png" alt="Popup with current-page summary and history" width="380">
+
+Click the Mustela icon in the toolbar to:
+
+- See a summary of all IOC detected on the current page, grouped by type
+- Run a **manual lookup** of any IOC by pasting it into the search field
+- Browse your **recent investigations** across all sessions
+- Enable or disable Mustela on the current page
+
+---
+
+### Context-menu lookup
+
+Select any text on a page, right-click, and choose **Investigate with Mustela**. Mustela recognises the IOC type automatically and opens the panel with results.
+
+---
+
+### Local storage — no backend
+
+All data stays in your browser:
+
+| Data | Stored in |
+|---|---|
+| API keys | `chrome.storage.local` |
+| Lookup cache | `chrome.storage.local` |
+| Investigation history | `chrome.storage.local` |
+| Analyst notes | `chrome.storage.local` |
+| Disabled-page rules | `chrome.storage.local` |
+
+Nothing is sent to any backend. The only outbound calls are the provider lookups you explicitly trigger — and only toward the providers you configured. Full details in [`docs/PRIVACY_TRANSPARENCY.md`](docs/PRIVACY_TRANSPARENCY.md).
+
+---
+
+## Usage walkthrough
+
+1. Open any page containing indicators — a SIEM alert, a ticket, a CTI report, an email
+2. Mustela detects and highlights IOC automatically (underlined on the page)
 3. Click a highlighted IOC to open the investigation panel
-4. Review the consolidated verdict, add a local analyst note, or export the result as JSON
-5. Pivot to the provider's site only when you need deeper context
+4. Review the aggregated verdict from your configured providers
+5. Add an analyst note if you want to keep context for later
+6. Use the external pivot links only when you need deeper context on a provider's site
+7. Export the result as JSON for your case management tool
 
-You can also select any text on a page and use the right-click context menu, or paste an IOC into the popup for a manual lookup.
+For IOC that are not on a page, paste them directly into the popup's search field.
+
+---
 
 ## Privacy and trust posture
 
-Mustela is intentionally transparent about its trade-offs:
+Mustela is intentionally transparent:
 
 - IOC detection and highlighting run **locally in the browser**
-- Settings, cache, history, notes, and disabled-page rules are stored in `chrome.storage.local`
-- Configured provider lookups send the IOC to the enabled third-party provider — and only then
+- Settings, cache, history, notes, and disabled-page rules are stored in `chrome.storage.local` — not synced to any cloud
+- Configured provider lookups send the IOC to the enabled third-party provider **and only when you request it**
 - There is **no backend, no telemetry, no analytics, no account system**
 
 If you investigate sensitive IOC, assume the enabled provider will see that IOC. Full details in [`docs/PRIVACY_TRANSPARENCY.md`](docs/PRIVACY_TRANSPARENCY.md).
 
+---
+
+## FAQ
+
+**Does Mustela work on all websites?**  
+Yes — it injects into any page Chrome loads. You can disable it per-page via the popup toggle if it interferes with a specific site.
+
+**Can I use it without any API keys?**  
+Yes. Detection, highlighting, external pivots, and the context menu all work without keys. API keys are only needed for enriched in-panel verdicts.
+
+**Are my API keys safe?**  
+Keys are stored in `chrome.storage.local`, which is sandboxed to the extension and not accessible to web pages or other extensions. They are never sent anywhere except the respective provider's API endpoint.
+
+**Does the extension slow down pages?**  
+Detection runs once when the page loads and processes text already in the DOM. It does not continuously scan the page or make network requests in the background.
+
+**What happens if a provider is down or rate-limited?**  
+The panel shows a clear error state for that provider while still showing results from the others. The cache prevents redundant requests for the same IOC within the same session.
+
+**Is Firefox supported?**  
+Not yet. Mustela currently targets Chrome and Chromium-based browsers (Edge, Brave, Arc, etc.) with Manifest V3. Firefox support is on the roadmap.
+
+**Can I contribute?**  
+Yes. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) for conventions. Security reports go through [`SECURITY.md`](SECURITY.md) — please do not open public issues for vulnerabilities.
+
+---
+
 ## Development
 
 ```bash
-npm install         # install dev dependencies
-npm test            # fast Node test suite (parsing, providers, storage, popup state, smoke checks)
-npm run build       # build the extension into dist/chrome
-npm run test:e2e    # Playwright end-to-end suite (requires a display)
+npm install          # install dev dependencies
+npm test             # fast Node test suite (parsing, providers, storage, popup state)
+npm run build        # build the extension into dist/chrome
+npm run test:e2e     # Playwright end-to-end suite (requires a display)
+npm run package      # build + create dist zip in artifacts/
 ```
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for conventions and what a good PR looks like. Security reports go through [`SECURITY.md`](SECURITY.md) — please do not open public issues for vulnerabilities.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for conventions and what a good PR looks like.
+
+---
 
 ## Current status
 
 Mustela is a **Chrome MVP**. Firefox support, backend services, shared team memory, and advanced automation are not implemented and not claimed. Near-term priorities: stronger detection quality, fewer false positives, better investigation UX, and more robust provider handling.
 
-## Contributing
+Issues and feedback are welcome — especially from people who work in SOC operations, CTI, incident response, or threat hunting. If you test Mustela on real analyst workflows, that feedback is more valuable than theoretical architecture debates.
 
-Issues and feedback are welcome, especially from people who work in SOC operations, CTI, incident response, or threat hunting. If you test Mustela on real analyst workflows, that feedback is more valuable than theoretical architecture debates. As is tradition.
+---
 
 ## License
 
