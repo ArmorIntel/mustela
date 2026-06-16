@@ -190,7 +190,7 @@ async function handleMessage(message, sender) {
       return { ok: true, data: result };
     }
     default:
-      return { ok: false, error: 'Unknown message type' };
+      return { ok: false, error: `Unknown message type: ${message?.type}` };
   }
 }
 

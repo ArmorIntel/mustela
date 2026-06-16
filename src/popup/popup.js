@@ -524,7 +524,11 @@ function mountCorrelation(history, url, title, llmAvailable) {
     try {
       const res = await send('CORRELATE_IOCS', { pageUrl: url, pageTitle: title });
       if (!res?.ok) {
-        renderCorrelation({ error: res?.error || 'Correlation failed.' });
+        const isStaleWorker = String(res?.error || '').toLowerCase().includes('unknown message type');
+        const errMsg = isStaleWorker
+          ? 'Extension needs to be reloaded — go to chrome://extensions and click the refresh icon on Mustela.'
+          : (res?.error || 'Correlation failed.');
+        renderCorrelation({ error: errMsg });
       } else {
         renderCorrelation({ result: res.data });
       }
