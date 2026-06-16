@@ -123,6 +123,96 @@ If a provider is not configured, Mustela remains fully functional for detection,
 
 ---
 
+## Setting up the LLM (Analyst Assist)
+
+Mustela integrates a **large language model** to augment investigations with AI-powered analysis. This feature is **optional** — Mustela remains fully functional without it. When enabled, it provides:
+
+- **Investigation summaries**: AI-generated one-sentence verdict and recommended next action for each IOC
+- **Correlation analysis**: Identify patterns and relationships across multiple IOCs in your investigation history
+
+The LLM runs on any **OpenAI-compatible API**, so you can use:
+
+- **Anthropic Claude** (via [Anthropic API](https://console.anthropic.com/))
+- **OpenAI** (GPT-4o, GPT-4 Turbo, etc.)
+- **Local models** (Ollama, LM Studio, vLLM)
+- Any other service with OpenAI `/chat/completions` compatible endpoints
+
+### Configuring the LLM
+
+1. Open the Mustela **Options** page (right-click the Mustela icon → **Options**)
+2. Scroll down to the **Analyst Assist (LLM)** section
+3. Check **Enable Analyst Assist**
+4. Fill in:
+   - **Base URL**: The API endpoint (e.g., `https://api.anthropic.com/v1` for Anthropic, `https://api.openai.com/v1` for OpenAI, `http://localhost:11434/v1` for Ollama)
+   - **API Key**: Your API key from the service
+   - **Model**: The model name (e.g., `claude-3-5-sonnet-20241022` for Claude, `gpt-4o` for OpenAI, `mistral` for Ollama)
+5. Click **Save**
+
+Mustela will validate the connection. If valid, the LLM features activate automatically.
+
+### AI-powered Investigation Summary
+
+When you investigate an IOC, the LLM automatically generates:
+
+- **Summary**: A one-sentence assessment of what the score means in context
+- **Action**: The single most important next investigative step
+
+The LLM considers:
+- The IOC type and value
+- Verdicts from all your configured threat intelligence providers (VirusTotal, AbuseIPDB, Shodan)
+- Whether providers disagree (and how to resolve the conflict)
+- The page context where you found the IOC (SIEM, ticket, email, etc.)
+
+**Example**: If investigating a domain on a ticket and VirusTotal flags it as malicious but Shodan finds it clean, the LLM might summarize: *"High-confidence malicious domain; flagged by multiple scanners, but recent benign hosting context suggests possible false positive — validate against your network logs."* The recommended action would be: *"Check your DNS logs for internal queries; if absent, mark as misdirection; if present, escalate for containment."*
+
+### Cross-IOC Correlation Analysis
+
+From the popup's **Analyze correlations** button, you can ask the LLM to identify patterns across your recent investigations:
+
+- **Pattern detection**: Shared infrastructure, ASN clustering, similar threat profiles, potential campaign indicators, common contexts
+- **Relationship verdict**: Are these IOCs "likely related", "possibly related", or "independent"?
+- **Next investigative step**: The single best move given the patterns found
+
+This is useful for:
+- Identifying campaign activity across multiple alerts
+- Clustering false positives or benign infrastructure
+- Finding infrastructure reuse by known threat groups
+- Connecting the dots across noisy SIEM output
+
+**Example**: After investigating 5 IPs and 3 domains from a batch of alerts, the LLM identifies they all use the same ASN, share hosting with known phishing campaigns, and appear on the same infrastructure. The recommendation: *"High confidence these are coordinated infrastructure — check ASN reputation history; add all 8 indicators to your blocklist and correlate with known C2 sinkhole activity."*
+
+### Recommended models
+
+| Provider | Model | Tier | Good for Mustela? |
+|---|---|---|---|
+| **Anthropic** | `claude-3-5-sonnet-20241022` | Standard | ✅ Excellent — fast, cheap, low latency. Recommended. |
+| **Anthropic** | `claude-3-opus-20250219` | Premium | ✅ Yes — more capable for complex correlations. Slower & more expensive. |
+| **OpenAI** | `gpt-4o` | Standard | ✅ Good — comparable cost to Sonnet, reliable. |
+| **OpenAI** | `gpt-4-turbo` | Premium | ✅ Yes — more capable, higher latency. |
+| **Ollama** | `mistral` or `neural-chat` (local) | Free | ✅ Good — completely offline, no API costs. Slower on CPU. |
+| **OpenAI** | `gpt-4 mini` | Budget | ⚠️ May struggle with complex correlations. |
+
+**Default recommendation**: Start with **Claude 3.5 Sonnet**. It's the fastest and most cost-effective for this workload.
+
+### Privacy with LLM
+
+When enabled, the LLM receives:
+
+- The IOC value and type (e.g., `192.168.1.1`, `domain`)
+- Threat verdicts from your providers (e.g., `malicious`, `suspicious`, `clean`)
+- The page context where you found it (URL, title)
+- Your recent investigation history (for correlation analysis)
+
+Assume the LLM provider will see this information. Mustela does **not**:
+- Send your provider API keys to the LLM
+- Send your full note history
+- Send information about pages you've disabled highlighting on
+- Store LLM responses; they are generated on-demand
+
+If investigating highly sensitive indicators, disable the LLM or use a local model (Ollama).
+
+---
+
 ## Features
 
 ### IOC detection
@@ -253,6 +343,18 @@ The panel shows a clear error state for that provider while still showing result
 
 **Is Firefox supported?**  
 Not yet. Mustela currently targets Chrome and Chromium-based browsers (Edge, Brave, Arc, etc.) with Manifest V3. Firefox support is on the roadmap.
+
+**Can I use the LLM features without configuring an LLM?**  
+Yes. All LLM features are optional. Without an LLM, Mustela still detects, highlights, and investigates IOC using your configured threat intelligence providers alone.
+
+**Do I need to pay for the LLM?**  
+It depends on which service you choose. Anthropic Claude, OpenAI, and other commercial LLM APIs charge per request (typically <$0.01 per investigation). If you prefer free, you can run Ollama locally on your machine with no API costs — it will be slower on CPU but completely offline.
+
+**Can I use a different LLM (not OpenAI-compatible)?**  
+Not yet. Mustela currently supports OpenAI-compatible APIs. If you want support for other LLM APIs (Anthropic's native API, Azure OpenAI, etc.), open an issue on GitHub.
+
+**Does the LLM see my provider API keys?**  
+No. The LLM only receives the verdicts and summaries from your providers — never the API keys themselves.
 
 **Can I contribute?**  
 Yes. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) for conventions. Security reports go through [`SECURITY.md`](SECURITY.md) — please do not open public issues for vulnerabilities.
