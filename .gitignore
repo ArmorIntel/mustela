@@ -7,3 +7,6 @@ playwright-report/
 *.crx
 *.zip
 .DS_Store
+.claude/launch.json
+.claude/settings.local.json
+.claude/skills/

@@ -2,7 +2,7 @@ const { IOC_TYPES, parseIocsFromText, detectSingleIoc } = globalThis.MUSTELA_SHA
 if (document?.documentElement) {
   document.documentElement.dataset.mustelaInjected = 'true';
 }
-const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT']);
+const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'OPTGROUP']);
 
 let observer;
 let panelEl;
