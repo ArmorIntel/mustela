@@ -7,3 +7,7 @@ playwright-report/
 *.crx
 *.zip
 .DS_Store
+
+# Claude Code tooling (local only)
+.claude/launch.json
+.claude/skills/
