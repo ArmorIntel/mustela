@@ -118,6 +118,20 @@ test('buildThreatSummary produces a concise analyst narrative from existing prov
   ]);
 });
 
+test('parseIocsFromText does not flag firstname.lastname style strings as domains when the TLD-like part is too long', () => {
+  // "nomdefamille" (12 chars) and similar long last names are not valid TLDs
+  const text = 'Assigned to prenom.nomdefamille for review, contact jean.bernardmuche directly';
+  const results = parseIocsFromText(text);
+  assert.equal(results.some((r) => r.type === IOC_TYPES.DOMAIN && r.normalized === 'prenom.nomdefamille'), false);
+  assert.equal(results.some((r) => r.type === IOC_TYPES.DOMAIN && r.normalized === 'jean.bernardmuche'), false);
+});
+
+test('parseIocsFromText still detects real domains with long but valid TLDs', () => {
+  const text = 'Connecting to evil.solutions and backdoor.international for C2';
+  const results = parseIocsFromText(text);
+  assert.equal(results.some((r) => r.type === IOC_TYPES.DOMAIN && r.normalized === 'evil.solutions'), true);
+});
+
 test('buildThreatSummary handles no-signal outcomes without inventing confidence', () => {
   const summary = buildThreatSummary({
     overallVerdict: 'unknown',

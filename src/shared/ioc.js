@@ -94,7 +94,11 @@ function isLikelyExcludedDomain(value, text, index = 0, options = {}) {
   const normalized = normalizeIoc(value, IOC_TYPES.DOMAIN);
   const mode = resolveDetectionMode(options.mode);
   if (DOMAIN_EXCLUSIONS.has(normalized)) return true;
-  if (DOMAIN_TLD_EXCLUSIONS.has(getDomainTld(normalized))) return true;
+  const tld = getDomainTld(normalized);
+  if (DOMAIN_TLD_EXCLUSIONS.has(tld)) return true;
+  // "word.longword" where "longword" exceeds realistic TLD length is likely a name or identifier, not a domain.
+  // Real ASCII TLDs top out around 11 chars (e.g. "international" is 13 but nearly never seen as a 2-label IOC).
+  if (tld.length > 11 && normalized.split('.').length <= 2) return true;
   if (mode === 'strict' && STRICT_DOMAIN_EXCLUSIONS.has(normalized)) return true;
   const before = text[index - 1] || '';
   if (before === '@') return true;
