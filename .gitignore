@@ -11,3 +11,4 @@ playwright-report/
 .claude/settings.local.json
 .claude/skills/
 .claude/
+mustela_backlog_report.html

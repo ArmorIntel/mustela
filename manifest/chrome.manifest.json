@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Mustela",
   "description": "Detect and investigate IOC values from any page.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "permissions": ["storage", "activeTab", "contextMenus", "tabs", "scripting"],
   "host_permissions": [
     "http://*/*",

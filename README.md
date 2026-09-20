@@ -119,6 +119,26 @@ Free tier: limited to basic queries (no historical data or filters). Covers stan
 
 ---
 
+### MISP
+
+MISP is a self-hosted threat intelligence platform. Unlike the three providers above, it is an **internal** provider: it queries your own instance instead of a public service, and it is the only provider Mustela can write back to.
+
+1. Log in to your MISP instance and open **Administration → List Auth Keys** (or your user profile) to create an automation key
+2. Copy the key and your instance base URL (for example `https://misp.example.org`)
+3. Paste both into the **MISP** fields in Mustela's Options page, then click **Test connection**
+4. Optionally set a **default event ID** — this is required for the **Add to MISP** button to work
+
+What it does:
+
+- **Lookup** — queries `/attributes/restSearch` for every detected IOC and reports whether your organisation has already seen it. For IPs, both `ip-src` and `ip-dst` are searched.
+- **Add to MISP** — the investigation panel shows an **Add to MISP** button that pushes the IOC as an attribute into your default event via `/attributes/add/{eventId}`. The result links back to the created attribute, or to the event when MISP does not return an attribute ID.
+
+Supported IOC types: IP, domain, URL, MD5, SHA1, SHA256. ASN and subnet are not supported by the MISP connector and the button is hidden for them.
+
+Because MISP is internal, it is excluded from the external pivot links — Mustela never offers to open your private instance through a third-party pivot URL.
+
+---
+
 If a provider is not configured, Mustela remains fully functional for detection, highlighting, and external pivots — it just will not display enriched data for that provider.
 
 ---
