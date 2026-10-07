@@ -52,4 +52,4 @@ Build and Node tests are the quick checks, not a substitute for E2E when analyst
 
 Keep PRs small and focused. Write code, commits, PR descriptions, and repository docs in English. Use [CONTRIBUTING.md](CONTRIBUTING.md) for [branching and commits](CONTRIBUTING.md#branching-and-commits), [PR expectations](CONTRIBUTING.md#what-a-good-pr-looks-like), and [style](CONTRIBUTING.md#code-style); fill in the [PR template](.github/PULL_REQUEST_TEMPLATE.md) honestly rather than duplicating its checklist here.
 
-Agents may push contribution branches and open PRs. Agents must never push to `main`, merge PRs, or create or push tags. Pushing a `v*` tag triggers the [release workflow](.github/workflows/release.yml) and publishes a release. Louis owns merges and releases.
+Agents may push contribution branches and open PRs. Agents must never push to `main`, merge PRs, or create or push tags. Pushing a `v*` tag triggers the [release workflow](.github/workflows/release.yml) and publishes a release. The maintainer owns merges and releases.
