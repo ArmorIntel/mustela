@@ -216,20 +216,17 @@ This is useful for:
 
 ### Privacy with LLM
 
-When enabled, the LLM receives:
+Analyst Assist is disabled by default. When enabled with a base URL, API key, and model, an investigation not served from cache **automatically** sends a summary request to the chosen OpenAI-compatible endpoint, without a separate AI click, even if some providers fail. The request includes:
 
-- The IOC value and type (e.g., `192.168.1.1`, `domain`)
-- Threat verdicts from your providers (e.g., `malicious`, `suspicious`, `clean`)
-- The page context where you found it (URL, title)
-- Your recent investigation history (for correlation analysis)
+- IOC value/type, overall verdict and score, tags, score factors, threat summary, and recommendation
+- Provider summaries/verdicts/confidence or errors, including MISP, and any provider conflict
+- Page URL/title when available in the investigation context
 
-Assume the LLM provider will see this information. Mustela does **not**:
-- Send your provider API keys to the LLM
-- Send your full note history
-- Send information about pages you've disabled highlighting on
-- Store LLM responses; they are generated on-demand
+The dedicated correlation action sends 2–10 selected history entries (IOC/type, verdict, score, tags, occurrence count, and associated URL/title), plus available current-page context — not the entire history. Configuration validation calls `GET /models` with authentication but no investigation prompt. Summary and correlation call `POST /chat/completions`, sending the configured model and authenticating with the LLM key as Bearer.
 
-If investigating highly sensitive indicators, disable the LLM or use a local model (Ollama).
+Provider API keys, the full page, raw MISP responses, and free-form analyst notes are not added to these prompts. Investigation LLM summary/action and raw response text are kept in the local cache; summary/action text is also copied into local history. The correlation response is returned to the UI, not saved by that handler to cache/history.
+
+Assume the endpoint can see submitted context, including internal URL/title and provider summaries. A failed or cancelled request may already have sent data; a cache hit avoids new lookup/summary calls on that path, not past disclosures. Disable unauthorized integrations and check the chosen endpoint's hosting, access, and retention. A local model does not stop other providers or manual pivots from receiving data. See [`docs/PRIVACY_TRANSPARENCY.md`](docs/PRIVACY_TRANSPARENCY.md).
 
 ---
 
@@ -303,17 +300,17 @@ Select any text on a page, right-click, and choose **Investigate with Mustela**.
 
 ### Local storage — no backend
 
-All data stays in your browser:
+Mustela stores the following locally in your browser; local storage is not a guarantee of non-transmission:
 
 | Data | Stored in |
 |---|---|
-| API keys | `chrome.storage.local` |
-| Lookup cache | `chrome.storage.local` |
-| Investigation history | `chrome.storage.local` |
+| Provider and Analyst Assist settings, keys, base URLs, model/default event | `chrome.storage.local` |
+| Investigation cache, including LLM summary/action and raw response text | `chrome.storage.local` |
+| Investigation history, including page context and summary/action text | `chrome.storage.local` |
 | Analyst notes | `chrome.storage.local` |
 | Disabled-page rules | `chrome.storage.local` |
 
-Nothing is sent to any backend. The only outbound calls are the provider lookups you explicitly trigger — and only toward the providers you configured. Full details in [`docs/PRIVACY_TRANSPARENCY.md`](docs/PRIVACY_TRANSPARENCY.md).
+There is no project backend or cloud sync. Investigations can call configured providers (including your chosen MISP instance) and automatically request an Analyst Assist summary. Connection tests, dedicated MISP add/correlation actions, and manual pivots also send requests to their recipients. Full details in [`docs/PRIVACY_TRANSPARENCY.md`](docs/PRIVACY_TRANSPARENCY.md).
 
 ---
 
@@ -337,10 +334,12 @@ Mustela is intentionally transparent:
 
 - IOC detection and highlighting run **locally in the browser**
 - Settings, cache, history, notes, and disabled-page rules are stored in `chrome.storage.local` — not synced to any cloud
-- Configured provider lookups send the IOC to the enabled third-party provider **and only when you request it**
-- There is **no backend, no telemetry, no analytics, no account system**
+- Investigations send IOC to enabled/configured providers, including MISP; MISP creation is a separate action
+- Enabled/configured Analyst Assist automatically receives a summary prompt on uncached investigations, including available URL/title and provider context; dedicated correlation sends selected history data
+- Manual pivots may disclose IOC without an API key; local LLM hosting does not prevent other outbound flows
+- There is **no project backend, no telemetry, no analytics, no extension account system**
 
-If you investigate sensitive IOC, assume the enabled provider will see that IOC. Full details in [`docs/PRIVACY_TRANSPARENCY.md`](docs/PRIVACY_TRANSPARENCY.md).
+If you investigate sensitive IOC or pages, assume the enabled provider will see submitted IOC and the configured LLM endpoint will see submitted context. Disable unauthorized integrations and check recipient hosting, access, and retention. Full details in [`docs/PRIVACY_TRANSPARENCY.md`](docs/PRIVACY_TRANSPARENCY.md).
 
 ---
 
