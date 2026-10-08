@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 - Root `AGENTS.md` entry point for AI-assisted contributions, covering product context, privacy guardrails, code navigation, validation, and maintainer-owned publication.
 
+### Security
+- Update the locked CRX packaging dependency `protocol-buffers-schema` from 3.6.0 to 3.6.1 to fix prototype pollution (GHSA-j452-xhg8-qg39), with a parser regression test. Extension permissions and outgoing data are unchanged.
+
 ## [0.3.0] - 2026-09-20
 
 Analyst Assist (LLM), MISP connector, and a build-free installation path.
