@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- Manual Chrome Web Store validation checklist and blank candidate report, with exact-ZIP identification, privacy checks, and maintainer-owned submission/publication decisions.
 - Root `AGENTS.md` entry point for AI-assisted contributions, covering product context, privacy guardrails, code navigation, validation, and maintainer-owned publication.
 
 ### Security

@@ -391,6 +391,8 @@ npm run test:e2e     # Playwright end-to-end suite (requires a display)
 npm run package      # build + create dist zip in artifacts/
 ```
 
+Before preparing a Chrome Web Store submission, follow the [manual release validation checklist and blank report](docs/RELEASE_VALIDATION.md). For a ZIP-only candidate, use `npm run pack:zip` after validation; a GitHub Release is not Store approval.
+
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for conventions and what a good PR looks like.
 
 ---
