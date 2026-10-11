@@ -668,11 +668,11 @@
           </li>
           <li>
             <span class="check"><svg class="ico" viewBox="0 0 24 24"><path d="m5 12 5 5 9-11"/></svg></span>
-            <span><b>Lookups are explicit.</b> An IOC reaches a provider only when you ask, and only the ones you enabled.</span>
+            <span><b>Investigations use configured integrations.</b> Enabled providers, including MISP, receive IOC during lookup. Adding to MISP is a separate action; manual pivots can disclose IOC without a key.</span>
           </li>
           <li>
             <span class="check"><svg class="ico" viewBox="0 0 24 24"><path d="m5 12 5 5 9-11"/></svg></span>
-            <span><b>AI is opt-in.</b> Bring your own key — or run a local model so nothing leaves your machine.</span>
+            <span><b>AI is opt-in.</b> Once configured, summaries run automatically on uncached investigations and may include URL/title and provider context. Correlation sends selected history. A local model does not stop other provider or pivot traffic. <a href="https://github.com/ArmorIntel/mustela/blob/main/docs/PRIVACY_TRANSPARENCY.md">Read the privacy details</a>.</span>
           </li>
         </ul>
         <p class="install-note" style="margin-top:20px">
