@@ -38,7 +38,7 @@ The loop is **detect → investigate → keep a trace**:
 4. Local-first is not zero disclosure. Configured providers receive investigated IOC values; external pivots navigate to provider sites with IOC-bearing URLs. Service validation also contacts configured destinations.
 5. Explicit “Add to MISP” writes a supported attribute to the configured event, including the analyst note as a comment. Analyst Assist sends structured evidence and available page URL/title context; correlation sends selected investigations and page context. See providers: `addIocToMisp`; assistants: `buildPrompt`, `buildCorrelationPrompt`.
 
-[Privacy transparency](docs/PRIVACY_TRANSPARENCY.md) currently omits MISP and Analyst Assist. Its correction is tracked separately; this reference records those flows without duplicating that work or changing them.
+Current [privacy transparency](docs/PRIVACY_TRANSPARENCY.md) documents MISP, Analyst Assist and pivots; this reference changes no flows.
 
 ## Current voice and evidence
 

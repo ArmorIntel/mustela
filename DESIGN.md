@@ -2,7 +2,7 @@
 
 ## Overview
 
-Inventory of public commit `8b7c175f022a9d48a9c186a264cc9f526d4d2cd9`, rechecked against main. This is descriptive, not a unified token specification or redesign. Product intent is in [PRODUCT.md](PRODUCT.md); observations and opportunities are in [the audit](docs/design-audit.md).
+Measured base: public commit `8b7c175f022a9d48a9c186a264cc9f526d4d2cd9`. Compared with main `876eaf6abc187d1ea98fb5f952960571772c91ef`: styles/handlers unchanged; site privacy copy and [privacy documentation](docs/PRIVACY_TRANSPARENCY.md) now cover MISP, Analyst Assist and pivots. Descriptive inventory, not shared tokens or redesign. See [product intent](PRODUCT.md) and [audit/opportunities](docs/design-audit.md).
 
 Source shorthand used below:
 - **P**: [popup.html](src/popup/popup.html), with [popup.js](src/popup/popup.js).
