@@ -96,32 +96,45 @@ test('correlation follows all five narrative stages', async ({ page }, info) => 
 });
 
 test('scene suspension preserves manual pause, correlation progress and closed demo', async ({ page }) => {
-  await page.clock.install(); await page.goto(server.url);
+  // Exercise native media/visibility delivery with the real browser clock.
+  // Synthetic frame advancement does not synchronize Chromium media events.
+  await page.goto(server.url);
+  const setMotion = async reducedMotion => {
+    await page.emulateMedia({ reducedMotion });
+    // Emulation returns before the scene preference listeners have run.
+    for (const selector of ['#motion', '#orb-pause']) {
+      if (reducedMotion === 'reduce') await expect(page.locator(selector)).toBeDisabled();
+      else await expect(page.locator(selector)).toBeEnabled();
+    }
+  };
   const signal = page.locator('#signal');
-  await page.clock.runFor(100); await expect(signal).toHaveAttribute('data-running', 'true');
+  await expect(signal).toHaveAttribute('data-running', 'true');
   await page.locator('#motion').click();
-  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await setMotion('reduce');
   await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: true }); document.dispatchEvent(new Event('visibilitychange')); });
-  await page.locator('#install').scrollIntoViewIfNeeded(); await page.clock.runFor(1000);
+  await page.locator('#install').scrollIntoViewIfNeeded(); await page.waitForTimeout(1000);
   await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: false }); document.dispatchEvent(new Event('visibilitychange')); });
-  await page.emulateMedia({ reducedMotion: 'no-preference' }); await page.locator('.hero').scrollIntoViewIfNeeded();
-  await page.clock.runFor(1000); await expect(signal).toHaveAttribute('data-running', 'false');
+  await setMotion('no-preference');
+  await page.locator('.hero').scrollIntoViewIfNeeded();
+  await expect(signal).toHaveAttribute('data-running', 'false');
   await expect(page.locator('#motion')).toHaveAttribute('aria-pressed', 'true');
-  await page.locator('#motion').click(); await page.clock.runFor(100); await expect(signal).toHaveAttribute('data-running', 'true');
-  await page.locator('#analyst-assist').scrollIntoViewIfNeeded(); await page.clock.runFor(4500);
+  await page.locator('#motion').click(); await expect(signal).toHaveAttribute('data-running', 'true');
+  await page.locator('#analyst-assist').scrollIntoViewIfNeeded();
   const orb = page.locator('#thinking-orb'); await expect(orb).toHaveAttribute('data-stage', 'mix');
   await page.locator('#orb-pause').click();
   const progress = await orb.getAttribute('data-progress');
-  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await setMotion('reduce');
   await expect(orb).toHaveAttribute('data-stage', 'ready');
-  await page.emulateMedia({ reducedMotion: 'no-preference' }); await page.clock.runFor(5000);
+  await setMotion('no-preference');
+  // Observe a full continuation interval: explicit pause must freeze progress.
+  await page.waitForTimeout(5000);
   await expect(orb).toHaveAttribute('data-progress', progress);
   await expect(orb).toHaveAttribute('data-running', 'false');
-  await page.locator('#orb-pause').click(); await page.clock.runFor(5000); await expect(orb).toHaveAttribute('data-stage', 'ready');
+  await page.locator('#orb-pause').click(); await expect(orb).toHaveAttribute('data-stage', 'ready');
   await page.getByRole('button', { name: 'Investigate IP 203.0.113.42', exact: true }).click();
   await page.getByRole('button', { name: 'Close investigation', exact: true }).click();
-  await page.emulateMedia({ reducedMotion: 'reduce' }); await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.clock.runFor(10000); await expect(page.locator('#investigation')).toBeHidden();
-  await page.locator('#install').scrollIntoViewIfNeeded(); await page.clock.runFor(100);
-  expect(await page.locator('canvas').evaluateAll(cs => cs.every(c => c.dataset.running === 'false'))).toBe(true);
+  await setMotion('reduce'); await setMotion('no-preference');
+  await page.waitForTimeout(10000); await expect(page.locator('#investigation')).toBeHidden();
+  await page.locator('#install').scrollIntoViewIfNeeded();
+  await expect.poll(() => page.locator('canvas').evaluateAll(cs => cs.every(c => c.dataset.running === 'false'))).toBe(true);
 });
