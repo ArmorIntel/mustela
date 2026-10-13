@@ -43,17 +43,36 @@
     <section class="product" id="demo" aria-labelledby="demo-title">
       <h2 id="demo-title">Follow an actual investigation flow.</h2>
       <p>Detect an indicator. Investigate it in context. Read the evidence and choose your next action.</p>
-      <div class="demo-shell">
+      <div class="demo-controls"><p id="phase" role="status">Select a highlighted indicator to begin.</p><div><button id="play" type="button">Replay guide</button><button id="pause-demo" type="button" aria-pressed="false">Pause guide</button></div></div>
+      <div class="tour" role="group" aria-label="Investigation stages"><button data-stage="1" type="button">Detect</button><button data-stage="3" type="button">Investigate</button><button data-stage="4" type="button">Read evidence</button><button data-stage="5" type="button">Take action</button></div>
+      <div class="demo-shell" data-stage="1">
         <article class="report" aria-label="Fictional incident report">
           <div class="report-top"><span>Incident report</span><span>Fictional example</span></div>
           <div class="report-body"><h3>Unexpected outbound activity</h3>
             <p>After opening a suspicious attachment, an endpoint initiated repeated outbound connections.</p>
-            <p>The destination was <span class="example-ioc">203.0.113.42</span>, accompanied by DNS queries for <span class="example-ioc">update.example.org</span>.</p>
+            <p>The destination was <button class="example-ioc" id="ioc" data-kind="IP" data-ioc-type="IP" aria-label="Investigate IP 203.0.113.42" aria-controls="investigation" aria-expanded="false" type="button">203.0.113.42</button>, accompanied by DNS queries for <button class="example-ioc" data-kind="DOMAIN" data-ioc-type="DOMAIN" aria-label="Investigate domain update.example.org" aria-controls="investigation" aria-expanded="false" type="button">update.example.org</button>.</p>
             <p>Review the destination reputation and exposed services. Correlate the results with endpoint evidence before deciding on containment.</p>
             <div class="report-bottom"><span>Documentation IP and reserved example domain. No live lookup.</span></div>
           </div>
         </article>
-        <p class="shell-notice">Static preparation only. Interactive investigation and guided playback are not enabled in this fixture.</p>
+        <span class="guide-pointer" aria-hidden="true" hidden>↖</span>
+        <aside class="mustela-panel" id="investigation" aria-label="Mustela example investigation" hidden>
+          <header><strong>Mustela</strong><button id="close" type="button" aria-label="Close investigation">×</button></header>
+          <div class="panel-body">
+            <div class="pill-row"><span id="ioc-kind">IP</span><button id="copy-ioc" type="button" aria-label="Copy selected example indicator">203.0.113.42</button></div>
+            <p class="panel-disclaimer">Fictional scores, source data, recommendations and AI output. No live lookup.</p>
+            <div class="panel-loading" role="status" hidden>Loading fictional evidence…</div>
+            <div class="summary-box" data-reveal="3" hidden><div class="summary-label">Global verdict</div><strong class="global-score"><span id="verdict">malicious</span> · <span id="score">92</span>/100</strong><p id="source-count">4/4 sources usable</p></div>
+            <div class="summary-box" data-reveal="3" hidden><div class="summary-label">Threat summary</div><p>Example signals require correlation with endpoint evidence.</p></div>
+            <div class="summary-box" data-reveal="4" hidden><strong>Investigate and contain if confirmed</strong><p>Fictional recommendation: correlate endpoint and DNS evidence before containment.</p></div>
+            <div class="provider-stack" data-reveal="4" hidden></div>
+            <div class="summary-box" data-reveal="5" hidden><div class="summary-label">Analyst Assist · Optional</div><p id="demo-ai"></p></div>
+            <div class="analyst-actions" data-reveal="5" hidden><button id="rerun" type="button">Re-run</button><button id="misp" type="button">Add to MISP</button><button id="copy-export" type="button">Copy export</button><button id="download" type="button">Download JSON</button></div>
+            <div class="summary-box" data-reveal="5" hidden><label for="analyst-note">Analyst note</label><textarea id="analyst-note" rows="3" placeholder="Add a note for this fictional investigation"></textarea></div>
+            <small id="note-status" role="status">Demo note stays in this session only.</small>
+            <div id="fallback-wrap" hidden><label for="copy-fallback">Select and copy example data manually</label><textarea id="copy-fallback" readonly rows="5"></textarea></div>
+          </div>
+        </aside>
       </div>
       <p class="demo-caption">Offline demonstration. Scores, provider data, recommendations and AI output in the complete example are fictional. No provider, MISP or model is called here.</p>
     </section>
@@ -96,5 +115,6 @@
     </section>
   </main>
   <footer class="site-footer"><p>Mustela. In-page IOC investigation.</p><div><a href="https://github.com/ArmorIntel/mustela">GitHub</a><a href="https://github.com/ArmorIntel/mustela/blob/main/LICENSE">MIT license</a></div></footer>
+  <script type="module" src="demo.js"></script>
 </body>
 </html>

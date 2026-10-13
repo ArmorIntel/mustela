@@ -13,7 +13,12 @@ test('landing preparation stays local, scoped and separate from the published si
   assert.match(html, /external pivots/);
   assert.match(html, /configured MISP/);
   assert.match(html, /optional Analyst Assist/i);
-  assert.doesNotMatch(html, /<script|fonts\.google|chromewebstore|guarantees? zero disclosure|no analytics/i);
+  assert.doesNotMatch(html, /fonts\.google|chromewebstore|guarantees? zero disclosure|no analytics/i);
+  assert.deepEqual([...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match => match[1]), ['demo.js']);
+  for (const name of ['demo.js', 'demo-state.js']) {
+    const script = await readFile(new URL(name, root), 'utf8');
+    assert.doesNotMatch(script, /\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|innerHTML|localStorage|chrome\./);
+  }
   for (const name of ['landing.css', 'demo.css']) {
     const css = await readFile(new URL(name, root), 'utf8');
     assert.doesNotMatch(css, /@import|https?:|--light|data-step|\.investigation\b|\.mustela-search/);
@@ -28,7 +33,7 @@ test('landing preparation stays local, scoped and separate from the published si
 test('HTTP fixture serves only its explicit local assets under the Pages prefix', async () => {
   const server = await startLandingServer();
   try {
-    for (const name of ['', 'landing.css', 'demo.css', 'icon128.png']) {
+    for (const name of ['', 'landing.css', 'demo.css', 'demo.js', 'demo-state.js', 'icon128.png']) {
       const response = await fetch(server.url + name);
       assert.equal(response.status, 200);
       assert.ok((await response.arrayBuffer()).byteLength > 0);

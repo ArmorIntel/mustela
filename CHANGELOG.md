@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- Offline investigation demo in the non-published landing fixture, with interruptible guidance, eligible fictional providers, session notes and real JSON export. The public site is unchanged.
 - Isolated, non-published landing-page shell with local assets and HTTP regression tests. The public site is unchanged.
 - Manual Chrome Web Store validation checklist and blank candidate report, with exact-ZIP identification, privacy checks, and maintainer-owned submission/publication decisions.
 - Root `AGENTS.md` entry point for AI-assisted contributions, covering product context, privacy guardrails, code navigation, validation, and maintainer-owned publication.

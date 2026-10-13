@@ -27,7 +27,7 @@ for (const { name, width, height, hasTouch = false, reducedMotion = 'no-preferen
     expect(await page.locator('main > section').evaluateAll(sections => sections.map(section => section.className))).toEqual([
       'hero', 'chapter detection', 'product', 'chapter enrichment', 'chapter action', 'chapter ai', 'privacy', 'closing'
     ]);
-    await expect(page.getByText('Static preparation only.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Replay guide', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Installation instructions' })).toHaveAttribute('href', 'https://github.com/ArmorIntel/mustela#installation');
     expect(await page.locator('.brand img').evaluate(img => img.complete && img.naturalWidth === 128)).toBe(true);
     expect(await page.locator('body').evaluate(el => getComputedStyle(el).backgroundColor)).toBe('rgb(8, 11, 17)');

@@ -1,13 +1,23 @@
-# Static landing preparation
+# Isolated landing preparation
 
-This is a single test fixture, not the published website or the final interactive experience. It lives outside `docs/`, has no link from the current site and is not deployed by a preview workflow. `docs/index.html` remains unchanged.
+This single test fixture is not the published website or the final experience. It lives outside `docs/`, has no link from the current site and is not deployed by a preview workflow. `docs/index.html` remains unchanged. Narrative artwork is reserved for the next integration step.
 
-The shell preserves the approved dark composition, section order, system typography, existing logo and local assets. There are no remote fonts or runtime scripts. Artwork placeholders and the static incident report deliberately do not claim to provide working investigation controls. Guided playback, the investigation panel and narrative artwork are separate integration steps.
+The shell preserves the approved dark composition, section order, system typography, existing logo and local assets. `landing.css` owns page composition; `demo.css` owns the scoped demonstration. Every selector is rooted in `.landing`. No extension CSS, light theme, remote fonts or unused legacy rules are imported.
 
-`landing.css` owns page composition; `demo.css` owns only the scoped demonstration layout. Every selector is rooted in `.landing`; demo selectors also require `.demo-shell`. No extension CSS, light theme or unused legacy rules are imported.
+## Offline investigation
 
-Run `npm run test:e2e -- tests/e2e/landing-shell.spec.js` for the shell, or `npm run verify` for full validation. The test server exposes only this fixture and its assets under `/mustela/` on an ephemeral loopback port. The HTTP tests cover desktop 1440×900, tablet 768×1024, touch-enabled mobile 390×844 and reduced motion. Screenshots are named `shell-*-not-final.png` in the Playwright test outputs.
+The panel uses a documentation IP and reserved example domain. Scores, source data, recommendations and AI output are explicitly fictional. IP examples contain VirusTotal, AbuseIPDB, Shodan context and internal MISP evidence; domain examples contain only VirusTotal and MISP. No provider, MISP or model is called. The MISP action only explains the real extension's configuration requirement.
 
-Tests check section order, local resources, internal links, metadata, overflow, keyboard skip/focus and installation navigation. Text contrast is measured from computed colors and composite ancestor backgrounds. For the light indicator gradient, the opaque base is a conservative lower bound; its white overlays increase contrast with the dark label. The opaque fallback is also exercised. These shell checks are not a claim of final-site accessibility compliance or physical-device performance. A physical phone has not been tested.
+`demo-state.js` contains provider fixtures and a guide with one cancellable timer. Cursor, loading, verdict, evidence and actions appear in sequence. Offscreen/hidden/reduced-motion suspension retains elapsed time. Explicit pause survives environmental changes; only Replay resets progress. Pointer, focus, keyboard and note input transfer ownership immediately. Manual results are synchronous, so no delayed load, scroll or note writer can reopen a closed panel or overwrite a choice. Reduced motion leaves manual access available without opening a panel automatically.
+
+Notes remain in memory per indicator for the page session. DOM content uses text nodes and textarea values, not HTML interpolation. Download JSON creates a real local file with the fictional disclaimer and provider evidence. Copy reports success only after a successful clipboard write; refusal or an insecure context offers a selectable readonly field and JSON download. Late copy completion cannot overwrite status after selection, note editing or closure.
+
+## Validation
+
+Run `npm run test:e2e -- tests/e2e/landing-shell.spec.js tests/e2e/landing-demo.spec.js`, or `npm run verify` for full validation. The server exposes only explicit fixture assets under `/mustela/` on an ephemeral loopback port. Tests cover 1440×900 desktop, 768×1024 tablet, 390×844 touch-enabled mobile and reduced motion, with screenshots in Playwright outputs.
+
+Shell tests retain section order, local resources, internal links, metadata, overflow, skip/focus and installation checks. Panel tests exercise both IOC types, literal long notes, real JSON parsing, clipboard failure/success, source disclosure, keyboard/touch, interruption and combined lifecycle changes. Unit tests use a deterministic scheduler to verify timer cancellation and remaining-time preservation.
+
+Text contrast is measured from computed colors and composite ancestor backgrounds on the open panel and shell, including opaque fallback surfaces. White indicator-gradient overlays increase contrast with the dark label; its opaque base is the conservative minimum. These checks are not final-site accessibility certification or physical-device performance measurements. A physical phone has not been tested.
 
 Privacy copy identifies configured providers, MISP, external pivots, automatic optional AI summaries and dedicated correlation. Installation uses the existing release ZIP/Load unpacked route, not a proposed Store listing. No extension data flows or permissions change.

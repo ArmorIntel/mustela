@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 // Serve exactly the fixture, with the same relative asset prefix as Pages.
 export async function startLandingServer() {
   const root = new URL('../fixtures/landing/', import.meta.url);
-  const types = { 'index.html': 'text/html', 'landing.css': 'text/css', 'demo.css': 'text/css', 'icon128.png': 'image/png' };
+  const types = { 'index.html': 'text/html', 'landing.css': 'text/css', 'demo.css': 'text/css', 'demo.js': 'text/javascript', 'demo-state.js': 'text/javascript', 'icon128.png': 'image/png' };
   const server = createServer(async (request, response) => {
     const path = new URL(request.url, 'http://localhost').pathname;
     const name = path === '/mustela/' ? 'index.html' : path.replace('/mustela/', '');
