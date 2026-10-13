@@ -1,10 +1,10 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 
-// Serve exactly the fixture, with the same relative asset prefix as Pages.
+// Serve the candidate Pages entry and only its explicit local assets.
 export async function startLandingServer() {
-  const root = new URL('../fixtures/landing/', import.meta.url);
-  const types = { 'index.html': 'text/html', 'landing.css': 'text/css', 'demo.css': 'text/css', 'demo.js': 'text/javascript', 'demo-state.js': 'text/javascript', 'icon128.png': 'image/png' };
+  const root = new URL('../../docs/', import.meta.url);
+  const types = { 'index.html': 'text/html', ...Object.fromEntries(['landing.css', 'demo.css', 'demo.js', 'demo-state.js', 'scene-loop.js', 'signal.js', 'chapters.js', 'orb.js', 'icon128.png'].map(name => ['assets/landing/' + name, name.endsWith('.css') ? 'text/css' : name.endsWith('.png') ? 'image/png' : 'text/javascript'])) };
   const server = createServer(async (request, response) => {
     const path = new URL(request.url, 'http://localhost').pathname;
     const name = path === '/mustela/' ? 'index.html' : path.replace('/mustela/', '');

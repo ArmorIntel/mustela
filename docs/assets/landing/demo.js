@@ -122,8 +122,12 @@ const visibility = () => guide.conditions({ hidden: document.hidden });
 const preference = () => guide.conditions({ reduced: motion.matches });
 document.addEventListener('visibilitychange', visibility);
 motion.addEventListener('change', preference);
-window.addEventListener('pagehide', () => {
+function pagehide(event) {
+  if (event.persisted) { guide.conditions({ hidden: true }); return; }
   guide.dispose(); observer.disconnect();
   document.removeEventListener('visibilitychange', visibility); motion.removeEventListener('change', preference);
-}, { once: true });
+  window.removeEventListener('pagehide', pagehide); window.removeEventListener('pageshow', visibility);
+}
+window.addEventListener('pagehide', pagehide);
+window.addEventListener('pageshow', visibility);
 refresh(); guide.conditions({ hidden: document.hidden, reduced: motion.matches });

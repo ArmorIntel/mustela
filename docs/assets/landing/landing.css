@@ -38,8 +38,6 @@
 .landing .button.secondary { background: transparent; border-color: var(--control); color: var(--text); }
 .landing .button:active { transform: scale(.98); }
 .landing .art { min-width: 0; min-height: 470px; }
-.landing .shell-art { display: grid; place-items: center; color: var(--muted); font: 12px/1.6 var(--mono); text-align: center; padding: 24px; }
-.landing .shell-art p { overflow-wrap: anywhere; }
 .landing .trust { display: flex; justify-content: space-between; gap: 20px; padding: 22px 0; border-block: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 .landing .chapter { display: grid; grid-template-columns: 1fr 1fr; gap: 90px; align-items: center; padding: 85px 0; border-bottom: 1px solid var(--line); }
 .landing .chapter h2 { font-size: clamp(30px, 3.5vw, 46px); font-weight: 500; letter-spacing: -.035em; line-height: 1.15; margin: 0 0 22px; }
@@ -113,3 +111,32 @@
 @media (prefers-reduced-motion: reduce) {
   .landing .button:active { transform: none; }
 }
+
+/* Narrative artwork remains supplemental to readable descriptions. */
+.landing .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.landing .art canvas { display: block; width: 100%; height: 430px; }
+.landing .chapter-art canvas { display: block; width: 100%; height: 300px; }
+.landing .chapter.ai { padding-block: 90px; }
+.landing .chapter.ai canvas { height: 390px; }
+.landing :is(.art-controls, .chapter-motion, .orb-controls, .brief-top) { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.landing :is(.art-controls, .chapter-motion) { justify-content: flex-end; }
+.landing :is(.art-controls, .chapter-motion, .orb-controls, .brief-top, .type-controls, .action-controls) button { background: none; border: 0; border-bottom: 1px solid var(--control); border-radius: 0; color: #c2d1ed; min-height: 44px; min-width: 44px; padding: 8px 2px; font: 12px system-ui, sans-serif; cursor: pointer; }
+.landing :is(.type-controls, .action-controls) { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 24px; }
+.landing :is(.type-controls, .action-controls) [aria-pressed="true"] { color: #c7d8ff; border-bottom-color: var(--signal); }
+.landing button:disabled { cursor: default; }
+.landing .orb-controls { color: var(--muted); font-size: 12px; }
+.landing #ai-output { min-height: 112px; }
+.landing #ai-output li { visibility: hidden; opacity: 0; transform: translateY(5px); transition: opacity 240ms cubic-bezier(.23,1,.32,1), transform 240ms cubic-bezier(.23,1,.32,1); margin-bottom: 8px; }
+.landing #ai-output.steps-visible li { visibility: visible; opacity: 1; transform: none; }
+.landing #ai-output.steps-visible li:nth-child(2) { transition-delay: 70ms; }
+.landing #ai-output.steps-visible li:nth-child(3) { transition-delay: 140ms; }
+.landing .ai-stage-caption { font-size: 12px; }
+@media (max-width: 780px) { .landing .art canvas { height: 370px; } }
+@media (max-width: 600px) {
+  .landing .art canvas { height: 300px; }
+  .landing .chapter-art canvas { height: 240px; }
+  .landing .chapter.ai { padding-block: 55px; }
+  .landing .chapter.ai canvas { height: 310px; }
+  .landing .brief-top { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) { .landing #ai-output li { transition: none; transform: none; } }

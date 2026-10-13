@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { startLandingServer } from './helpers/landing-server.js';
 
-const root = new URL('../tests/fixtures/landing/', import.meta.url);
-test('landing preparation stays local, scoped and separate from the published site', async () => {
+const root = new URL('../docs/', import.meta.url);
+test('complete landing stays local and scoped', async () => {
   const html = await readFile(new URL('index.html', root), 'utf8');
   assert.match(html, /class="landing"/);
   assert.match(html, /name="description"/);
@@ -14,13 +14,13 @@ test('landing preparation stays local, scoped and separate from the published si
   assert.match(html, /configured MISP/);
   assert.match(html, /optional Analyst Assist/i);
   assert.doesNotMatch(html, /fonts\.google|chromewebstore|guarantees? zero disclosure|no analytics/i);
-  assert.deepEqual([...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match => match[1]), ['demo.js']);
+  assert.deepEqual([...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match => match[1]), ['assets/landing/demo.js', 'assets/landing/signal.js', 'assets/landing/chapters.js', 'assets/landing/orb.js']);
   for (const name of ['demo.js', 'demo-state.js']) {
-    const script = await readFile(new URL(name, root), 'utf8');
+    const script = await readFile(new URL('assets/landing/' + name, root), 'utf8');
     assert.doesNotMatch(script, /\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|innerHTML|localStorage|chrome\./);
   }
   for (const name of ['landing.css', 'demo.css']) {
-    const css = await readFile(new URL(name, root), 'utf8');
+    const css = await readFile(new URL('assets/landing/' + name, root), 'utf8');
     assert.doesNotMatch(css, /@import|https?:|--light|data-step|\.investigation\b|\.mustela-search/);
     const selectors = css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{/g);
     for (const [, selector] of selectors) {
@@ -33,7 +33,7 @@ test('landing preparation stays local, scoped and separate from the published si
 test('HTTP fixture serves only its explicit local assets under the Pages prefix', async () => {
   const server = await startLandingServer();
   try {
-    for (const name of ['', 'landing.css', 'demo.css', 'demo.js', 'demo-state.js', 'icon128.png']) {
+    for (const name of ['', ...['landing.css', 'demo.css', 'demo.js', 'demo-state.js', 'scene-loop.js', 'signal.js', 'chapters.js', 'orb.js', 'icon128.png'].map(n => 'assets/landing/' + n)]) {
       const response = await fetch(server.url + name);
       assert.equal(response.status, 200);
       assert.ok((await response.arrayBuffer()).byteLength > 0);
@@ -42,7 +42,7 @@ test('HTTP fixture serves only its explicit local assets under the Pages prefix'
       assert.equal((await fetch(server.url + path)).status, 404);
     }
     const published = await readFile(new URL('../docs/index.html', import.meta.url), 'utf8');
-    assert.doesNotMatch(published, /fixtures\/landing|landing\.css|demo\.css/);
+    assert.doesNotMatch(published, /fixtures\/landing|shell-art|reserved for the complete/);
   } finally {
     await server.close();
   }
