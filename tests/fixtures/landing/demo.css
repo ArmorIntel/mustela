@@ -1,0 +1,29 @@
+/* Demo-only layout; no copied extension runtime, light theme or unused legacy rules. */
+.landing .demo-shell { display: grid; grid-template-columns: minmax(0, 1fr) 400px; min-height: 700px; padding: 30px; gap: 28px; align-items: start; background: #0d121c; border: 1px solid var(--line); border-radius: 6px; }
+.landing .demo-shell .report { min-width: 0; border: 1px solid #303d54; border-radius: 4px; background: #141c2a; margin-top: 35px; }
+.landing .demo-shell .report-top { display: flex; justify-content: space-between; gap: 10px; padding: 14px 22px; color: var(--muted); font-size: 12px; border-bottom: 1px solid #303d54; }
+.landing .demo-shell .report-body { padding: 30px 28px; }
+.landing .demo-shell h3 { font-size: 26px; line-height: 1.25; letter-spacing: -.025em; font-weight: 500; margin: 0 0 24px; }
+.landing .demo-shell .report p { color: #b8c3d7; font-size: 14px; line-height: 2.15; overflow-wrap: anywhere; }
+.landing .demo-shell .example-ioc { font: 600 13px/1.6 var(--mono); padding: 3px 8px; border-radius: 999px; background: #b5c2d9; color: #172032; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.landing .demo-shell .report-bottom { border-top: 1px solid #303d54; padding-top: 20px; color: var(--muted); font-size: 12px; margin-top: 28px; }
+.landing .demo-shell .shell-notice { margin: 180px 0 0; color: var(--muted); font-size: 14px; text-align: center; }
+@media (max-width: 1100px) {
+  .landing .demo-shell { grid-template-columns: minmax(0, 1fr) 360px; padding: 20px; gap: 20px; }
+}
+@media (max-width: 850px) {
+  .landing .demo-shell { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .landing .demo-shell .report { margin-top: 0; }
+  .landing .demo-shell .shell-notice { margin: 0; }
+}
+@media (max-width: 600px) {
+  .landing .demo-shell { padding: 12px; gap: 18px; }
+  .landing .demo-shell .report-top { padding: 12px; }
+  .landing .demo-shell .report-body { padding: 24px 16px; }
+  .landing .demo-shell h3 { font-size: 24px; }
+  .landing .demo-shell .report p { font-size: 13px; }
+}
+/* Optional translucency has a readable opaque base when blur is unavailable. */
+@supports (backdrop-filter: blur(1px)) {
+  .landing .demo-shell .example-ioc { background: linear-gradient(180deg, #ffffffd1, #ffffff8a), #b5c2d9; backdrop-filter: blur(24px); }
+}
