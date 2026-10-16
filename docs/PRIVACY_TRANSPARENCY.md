@@ -84,6 +84,12 @@ Paths below are relative to the selected instance/endpoint base URL where applic
 
 MISP uses `POST` for both searching and adding: **POST does not always mean a write**. Lookup searches existing attributes; only the dedicated add action creates an attribute. MISP supports IP, domain, URL, MD5, SHA1, and SHA256, not ASN/subnet. Its label as an internal provider does not keep data inside the browser: requests go to the chosen instance.
 
+### Defender query clipboard
+
+**Copy Defender KQL** in popup manual lookup generates a deterministic query locally and writes it to the system clipboard only on an explicit click or keyboard activation. This action does not call providers or Microsoft, open tabs, execute a query, collect the page URL/title, or create investigation/history/cache/note records, including on sensitive pages. It works without API keys or Analyst Assist and while transmissions are paused; it adds no Chrome permissions.
+
+The clipboard contains the normalized IOC inside a Defender XDR query and may be accessible to other applications. The analyst chooses where to paste and execute it; any subsequent disclosure or execution is outside this copy action. Other investigation and pivot actions still make the outgoing requests described above.
+
 ### Manual TLP labels and exports
 
 Changing the TLP selector only writes local history; it adds no provider request. Copy export and Download JSON include the canonical root `tlp` field (or `null` for Not classified), together with IOC, note and results, without provider configuration/API keys. Whoever receives that file or copied text receives the sharing label too.

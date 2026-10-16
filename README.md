@@ -76,6 +76,23 @@ Extension interfaces can send `GET_PAUSE_STATE` or `SET_PAUSE_STATE` with `paylo
 
 Once OFF is confirmed, the background rejects investigations/reruns, provider pivots, correlation, MISP adds, API-key tests, and investigation context menus, even from an already-open interface or without API keys. Interrupted investigations cannot continue after ON; resuming preserves preferences and never replays blocked actions. Already-started requests may finish: pause does not recall transmitted data, delete remote data, or stop autonomous traffic from websites already open. See [the pause network contract](docs/PRIVACY_TRANSPARENCY.md#global-transmission-pause).
 
+## Copy a Defender hunting query
+
+In the popup's **Manual lookup**, enter exactly one IPv4, domain, HTTP(S) URL, MD5, SHA1, or SHA256 and choose **Copy Defender KQL**. This local action needs no API keys or Analyst Assist, leaves the popup open, and does not investigate, save history, or contact Microsoft. Paste and run the query yourself in **Microsoft Defender XDR Advanced Hunting**, with **Defender for Endpoint telemetry** available.
+
+For `8.8.8.8`, the clipboard receives:
+
+```kusto
+// Microsoft Defender XDR Advanced Hunting — requires Defender for Endpoint telemetry
+DeviceNetworkEvents
+| where Timestamp >= ago(7d)
+| where RemoteIP == "8.8.8.8"
+```
+
+The fixed default is **7 days**; edit it after pasting if needed. Network indicators use `DeviceNetworkEvents`: domains match `RemoteUrl` exactly (case-insensitive), not subdomains or full URLs; URLs match exactly (case-sensitive), preserving the parser-normalized path and parameters. Hashes use `DeviceFileEvents` with the corresponding case-insensitive MD5/SHA1/SHA256 filter. Hash columns may be unpopulated, especially SHA256: no results do not prove absence of the IOC.
+
+Only whole inputs recognized by the current parser are supported; surrounding text, multiple IOC, ASN, subnet, IPv6 and email inputs are rejected. This is not a generic Sentinel/DNS template or a Splunk/Elastic connector. No query execution or real-tenant validation is provided. Clipboard contents may be accessible to other applications; check where you paste them. See [privacy details](docs/PRIVACY_TRANSPARENCY.md#defender-query-clipboard).
+
 ## Setting up providers
 
 Mustela detects and highlights IOC out of the box — no API keys required.
