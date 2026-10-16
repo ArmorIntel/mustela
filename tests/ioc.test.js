@@ -2,6 +2,54 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildThreatSummary, detectSingleIoc, isValidIpv4, isValidSubnet, normalizeIoc, parseIocsFromText, summarizeProviderVerdict, IOC_TYPES } from '../src/shared/ioc.js';
 
+test('IPv6 uses the IP type, canonical values and exact original source ranges', () => {
+  const cases = [
+    ['2001:0DB8:0000:0000:0000:0000:0000:0001', '2001:db8::1'],
+    ['2001:db8::1', '2001:db8::1'], ['::1', '::1'], ['::', '::'],
+    ['::ffff:192.0.2.1', '::ffff:c000:201'],
+    ['1:2:3:4:5:6:192.0.2.1', '1:2:3:4:5:6:c000:201'],
+    ['2001:0:0:1:0:0:1:1', '2001::1:0:0:1:1'],
+    ['2001:0:1:0:0:0:1:1', '2001:0:1::1:1'],
+    ['2001:db8:0:1:2:3:4:5', '2001:db8:0:1:2:3:4:5']
+  ];
+  for (const mode of ['balanced', 'strict']) {
+    for (const [raw, normalized] of cases) {
+      for (const text of [raw, `Before [${raw}], after.`, `(${raw}).`]) {
+        const results = parseIocsFromText(text, { mode });
+        assert.equal(results.length, 1, text);
+        assert.deepEqual({ ...results[0], confidence: undefined }, {
+          type: 'ip', raw, normalized, index: text.indexOf(raw), length: raw.length, confidence: undefined
+        });
+        assert.equal(normalizeIoc(raw, IOC_TYPES.IP), normalized);
+      }
+    }
+  }
+  const repeated = parseIocsFromText(`${cases[0][0]} 2001:db8::1`);
+  assert.equal(repeated.length, 2);
+  assert.equal(repeated[0].normalized, repeated[1].normalized);
+});
+
+test('IPv6 rejects whole malformed and unsupported tokens without nested IPv4 fragments', () => {
+  for (const raw of [
+    '2001::db8::1', '12345::1', '12:34:56', 'aa:bb:cc:dd:ee:ff',
+    '1:2:3:4:5:6:7:8:9', '1:2:3:4:5:6:7', '1:2:3:4:5:6:7:8::',
+    ':::1', '2001:db8::g', 'x2001:db8::1', '2001:db8::1x',
+    '::ffff:999.0.2.1', '::ffff:192.00.2.1', '::ffff:192.0.2.1:2',
+    '::ffff:192.0.2.1/120', '2001:db8::1/64', 'fe80::1%eth0',
+    '[2001:db8::1]/64', '[fe80::1%eth0]', '2001[:]db8::1', '::ffff:192[.]0[.]2[.]1', `${'abcd:'.repeat(10000)}1`
+  ]) {
+    assert.deepEqual(parseIocsFromText(raw), [], raw.slice(0, 100));
+  }
+  const results = parseIocsFromText('https://[2001:db8::1]/a ::ffff:192.0.2.1 d41d8cd98f00b204e9800998ecf8427e');
+  assert.deepEqual(results.map((r) => r.type), ['url', 'ip', 'md5']);
+  assert.equal(results[0].raw, 'https://[2001:db8::1]/a');
+});
+
+test('ordinary colon labels retain IPv4 and subnet detection', () => {
+  assert.equal(detectSingleIoc('IP:8.8.8.8').normalized, '8.8.8.8');
+  assert.equal(detectSingleIoc('network:8.8.8.0/24').type, 'subnet');
+});
+
 test('normalizeIoc trims URL punctuation and lowercases domains/hashes', () => {
   assert.equal(normalizeIoc('https://example.com/path);', IOC_TYPES.URL), 'https://example.com/path');
   assert.equal(normalizeIoc('Example.COM', IOC_TYPES.DOMAIN), 'example.com');

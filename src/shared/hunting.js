@@ -25,7 +25,8 @@ export function generateDefenderQuery(input) {
   // Match the whole input, not the first candidate. A URL may contain nested
   // IP/hash candidates; its full-span match is the single intended indicator.
   const ioc = parseIocsFromText(value).find((entry) => entry.index === 0 && entry.length === value.length);
-  const template = ioc && TEMPLATES[ioc.type];
+  // Hunting templates currently support IPv4 only, independently of detection.
+  const template = ioc && !(ioc.type === IOC_TYPES.IP && ioc.normalized.includes(':')) && TEMPLATES[ioc.type];
   if (!template) return invalid('Use exactly one IPv4, domain, HTTP(S) URL or MD5/SHA1/SHA256 hash, without surrounding text.');
   if (ioc.type === IOC_TYPES.URL) {
     try {
