@@ -1,4 +1,4 @@
-const { IOC_TYPES, parseIocsFromText, detectSingleIoc } = globalThis.MUSTELA_SHARED || {};
+const { IOC_TYPES, parseIocsFromText, detectSingleIoc, isProtectedIoc } = globalThis.MUSTELA_SHARED || {};
 if (document?.documentElement) {
   document.documentElement.dataset.mustelaInjected = 'true';
 }
@@ -43,7 +43,7 @@ async function openExternal(provider, ioc) {
 }
 
 function isExternalPivotSupported(providerId, ioc) {
-  if (!ioc?.type) return false;
+  if (!ioc?.type || isProtectedIoc(ioc)) return false;
   if (providerId === 'virustotal') return [IOC_TYPES.IP, IOC_TYPES.DOMAIN, IOC_TYPES.URL, IOC_TYPES.MD5, IOC_TYPES.SHA1, IOC_TYPES.SHA256].includes(ioc.type);
   if (providerId === 'abuseipdb') return [IOC_TYPES.IP, IOC_TYPES.SUBNET].includes(ioc.type);
   if (providerId === 'shodan') return [IOC_TYPES.IP, IOC_TYPES.ASN].includes(ioc.type);
@@ -276,6 +276,7 @@ function renderPanelSkeleton(ioc) {
     <div class="body">
       <div class="mustela-pill-row">
         <span class="mustela-pill mustela-pill--type">${escapeHtml(String(ioc?.type || 'manual').toUpperCase())}</span>
+        ${isProtectedIoc(ioc) ? '<span class="mustela-pill">Internal / reserved</span>' : ''}
         <span class="mustela-ioc-value mustela-copyable" data-copy-value="${escapeHtml(String(ioc?.normalized || 'No IOC selected'))}" data-copy-feedback="" aria-label="Copy IOC" title="Copy IOC" role="button" tabindex="0">${escapeHtml(String(ioc?.normalized || 'No IOC selected'))}</span>
       </div>
       <div id="mustela-result" style="margin-top:12px;">Loading…</div>
@@ -441,7 +442,7 @@ function renderProviderCard(provider) {
           : 'IOC';
   const isContextProvider = provider.provider === 'Shodan';
   const tone = isContextProvider ? 'neutral' : providerTone(provider.confidence);
-  const statusText = provider.success ? (isContextProvider ? '' : `${provider.confidence ?? 0}/100`) : 'Unavailable';
+  const statusText = provider.blocked ? 'Blocked' : provider.success ? (isContextProvider ? '' : `${provider.confidence ?? 0}/100`) : 'Unavailable';
   const summary = provider.summary || provider.error || '';
   const fields = renderProviderFields(provider);
   const shouldShowSummary = !fields || !provider.success;
@@ -462,7 +463,7 @@ function renderProviderCard(provider) {
       ${shouldShowSummary ? `<div class="mustela-provider-summary">${escapeHtml(summary)}</div>` : ''}
       ${fields}
       ${provider.error ? `<small style="display:block;margin-top:10px;">${escapeHtml(provider.error)}</small>` : ''}
-      ${provider.externalUrl ? `<div class="mustela-provider-actions"><a class="mustela-provider-link" target="_blank" rel="noopener noreferrer" href="${provider.externalUrl}">Open in ${escapeHtml(provider.provider)}</a></div>` : ''}
+      ${provider.externalUrl ? `<div class="mustela-provider-actions"><a class="mustela-provider-link" target="_blank" rel="noopener noreferrer" href="${escapeHtml(provider.externalUrl)}">Open in ${escapeHtml(provider.provider)}</a></div>` : ''}
     </div>
   `;
 }
@@ -584,7 +585,8 @@ function renderResult(data) {
   const summaryEvidence = Array.isArray(threatSummary.evidence) ? threatSummary.evidence.slice(0, 2) : [];
   const factors = Array.isArray(data.scoreFactors) ? data.scoreFactors.slice(0, 3) : [];
   const successful = providerResults.filter((provider) => provider?.success).length;
-  const degraded = providerResults.length - successful;
+  const blocked = providerResults.filter((provider) => provider?.blocked).length;
+  const degraded = providerResults.length - successful - blocked;
   const tags = Array.isArray(data.tags) ? data.tags.slice(0, 4) : [];
   const llmSummary = data.llmSummary || {};
   const canAddToMisp = isMispAddSupported(data?.ioc);
@@ -599,6 +601,7 @@ function renderResult(data) {
           <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
             <span class="mustela-provider-kind signal">${copyableText(`${successful}/${providerResults.length || 0} sources usable`, 'Copy source summary')}</span>
             ${degraded > 0 ? `<span class="mustela-provider-kind limited">${copyableText(`${degraded} degraded`, 'Copy degraded source count')}</span>` : ''}
+            ${blocked > 0 ? `<span class="mustela-provider-kind context">${copyableText(`${blocked} blocked`, 'Copy blocked source count')}</span>` : ''}
             ${data.cached ? `<span class="mustela-provider-kind context">${copyableText('cached', 'Copy cache status')}</span>` : ''}
           </div>
         </div>
