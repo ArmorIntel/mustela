@@ -126,6 +126,17 @@ test('welcome/settings expose detection mode minimally and persist through save 
   assert.match(background, /detectionMode: saved\.detectionMode/);
 });
 
+test('manual TLP is wired only into local history, exports and explicit MISP adds', () => {
+  const content = fs.readFileSync(contentPath, 'utf8');
+  const background = fs.readFileSync(backgroundPath, 'utf8');
+  assert.match(content, /type: 'SAVE_HISTORY_TLP', payload: \{ historyKey, tlp:/);
+  assert.match(content, /buildInvestigationExport\(data, noteField.value, confirmedTlp\)/);
+  assert.match(content, /comment: noteField.value,\s+tlp: confirmedTlp/);
+  assert.match(content, /id="mustela-tlp"[^>]+disabled/);
+  assert.match(background, /case 'SAVE_HISTORY_TLP':\s+return \{ ok: true, data: await saveHistoryTlp\(message.payload\?\.historyKey, message.payload\?\.tlp\)/);
+  assert.match(background, /comment: message.payload\?\.comment,\s+tlp: message.payload\?\.tlp/);
+});
+
 test('background remembers investigations for fresh and cached lookups', () => {
   const background = fs.readFileSync(backgroundPath, 'utf8');
   assert.match(background, /toggleHistoryPin/);

@@ -1,4 +1,5 @@
 import { IOC_TYPES, isProtectedIoc, PUBLIC_LOOKUP_BLOCK_REASON } from '../shared/ioc.js';
+import { validateTlp } from '../shared/tlp.js';
 
 const PROVIDER_FETCH_TIMEOUT_MS = 12000;
 const MISP_SUPPORTED_TYPES = [IOC_TYPES.IP, IOC_TYPES.DOMAIN, IOC_TYPES.URL, IOC_TYPES.MD5, IOC_TYPES.SHA1, IOC_TYPES.SHA256];
@@ -305,6 +306,8 @@ async function mispLookup(ioc, config = {}) {
 }
 
 export async function addIocToMisp(ioc, config = {}, options = {}) {
+  const tlp = validateTlp(options.tlp === undefined ? null : options.tlp);
+  if (!ioc?.type || !String(ioc?.normalized || '').trim()) throw new Error('Invalid IOC');
   const baseUrl = normalizeBaseUrl(config.baseUrl);
   const eventId = String(options.eventId || config.defaultEventId || '').trim();
   if (!baseUrl) throw new Error('MISP base URL not configured');
@@ -320,6 +323,7 @@ export async function addIocToMisp(ioc, config = {}, options = {}) {
     to_ids: options.toIds !== false,
     comment: String(options.comment || '').trim()
   };
+  if (tlp !== null) body.Tag = [{ name: `tlp:${tlp}` }];
 
   const response = await providerFetch(`${baseUrl}/attributes/add/${encodeURIComponent(eventId)}`, {
     method: 'POST',

@@ -141,6 +141,14 @@ Supported IOC types: IP, domain, URL, MD5, SHA1, SHA256. ASN and subnet are not 
 
 Because MISP is internal, it is excluded from the external pivot links — Mustela never offers to open your private instance through a third-party pivot URL.
 
+### Local TLP sharing labels
+
+In the investigation panel, choose **TLP**: Not classified (the default), CLEAR, GREEN, AMBER, AMBER+STRICT, or RED. Wait for the local save confirmation before sharing. One manual label is remembered per IOC type/value, across pages and reruns, alongside its note; another IOC has its own label. Clearing history or eviction beyond the 50 most recent entries removes the label too.
+
+Copy export and Download JSON include a root `tlp` field (`null`, `clear`, `green`, `amber`, `amber+strict`, or `red`). **Add to MISP** sends the confirmed label as an attribute tag (`tlp:…`), only when clicked; Not classified adds no TLP tag. It does not change the event's distribution or publish it. A failed add is not retried automatically.
+
+A sharing label, not a network control. Check the recipient before sharing. TLP does not filter provider lookups, external pivots, or Analyst Assist, and selecting RED cannot undo past transmissions. Labels are not included in LLM prompts. Review the [privacy notice](docs/PRIVACY_TRANSPARENCY.md) before investigating sensitive data.
+
 ---
 
 If a provider is not configured, Mustela remains fully functional for detection, highlighting, and external pivots — it just will not display enriched data for that provider.

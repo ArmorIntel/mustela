@@ -69,10 +69,11 @@ function buildHistoryKey(ioc) {
   return type && normalized ? `${type}:${normalized}` : '';
 }
 
-function buildInvestigationExport(data, analystNote = '') {
+function buildInvestigationExport(data, analystNote = '', tlp = null) {
   const providerResults = Array.isArray(data?.providerResults) ? data.providerResults : [];
   return {
     exportedAt: new Date().toISOString(),
+    tlp,
     ioc: data?.ioc || null,
     overallVerdict: data?.overallVerdict || 'unknown',
     score: Number(data?.score || 0),
@@ -505,20 +506,63 @@ async function bindAnalystActions(data) {
   const copyBtn = panelEl?.querySelector('#mustela-copy-export');
   const exportBtn = panelEl?.querySelector('#mustela-download-export');
   const mispBtn = panelEl?.querySelector('#mustela-add-misp');
+  const tlpField = panelEl?.querySelector('#mustela-tlp');
+  const tlpStatus = panelEl?.querySelector('#mustela-tlp-status');
+  const rerunBtn = panelEl?.querySelector('#mustela-rerun');
   if (!historyKey || !noteField || !noteStatus || !copyBtn || !exportBtn) return;
 
+  let confirmedTlp = null;
+  let ready = false;
+  let busy = false;
+  let mispAdded = false;
+  const setBusy = (value) => {
+    busy = value;
+    for (const button of [copyBtn, exportBtn, mispBtn]) {
+      if (button) button.disabled = !ready || busy || (button === mispBtn && mispAdded);
+    }
+    tlpField.disabled = !ready || busy;
+    rerunBtn.disabled = busy;
+  };
+  setBusy(false);
+
   const syncButtons = () => {
-    const payload = buildInvestigationExport(data, noteField.value);
+    const payload = buildInvestigationExport(data, noteField.value, confirmedTlp);
     copyBtn.dataset.copyPayload = JSON.stringify(payload, null, 2);
     exportBtn.dataset.exportPayload = copyBtn.dataset.copyPayload;
     exportBtn.dataset.exportFilename = `${String(data?.ioc?.normalized || 'ioc').replace(/[^a-z0-9._-]+/gi, '_')}-investigation.json`;
   };
 
-  const noteRes = await sendRuntimeMessage({ type: 'GET_HISTORY_ENTRY', payload: { historyKey } }, { ok: true, data: null });
+  const noteRes = await sendRuntimeMessage({ type: 'GET_HISTORY_ENTRY', payload: { historyKey } }, { ok: false });
+  if (!noteRes?.ok || !noteRes.data) {
+    tlpStatus.textContent = 'Local sharing label not loaded. Re-run to retry.';
+    return;
+  }
+  confirmedTlp = ['clear', 'green', 'amber', 'amber+strict', 'red'].includes(noteRes.data.tlp) ? noteRes.data.tlp : null;
+  tlpField.value = confirmedTlp || '';
+  ready = true;
+  setBusy(false);
+  tlpStatus.textContent = 'Sharing label loaded locally.';
   const existingNote = noteRes?.data?.analystNote || '';
   noteField.value = existingNote;
   syncButtons();
   noteStatus.textContent = existingNote ? 'Local note loaded.' : 'Local note stays on this browser only.';
+
+  tlpField.addEventListener('change', async () => {
+    setBusy(true);
+    tlpStatus.textContent = 'Saving sharing label…';
+    const response = await sendRuntimeMessage({
+      type: 'SAVE_HISTORY_TLP', payload: { historyKey, tlp: tlpField.value || null }
+    }, { ok: false });
+    if (response?.ok && response.data) {
+      confirmedTlp = response.data.tlp;
+      tlpStatus.textContent = 'Sharing label saved locally.';
+    } else {
+      tlpStatus.textContent = 'Sharing label not saved. Previous label kept; select again to retry.';
+    }
+    tlpField.value = confirmedTlp || '';
+    syncButtons();
+    setBusy(false);
+  });
 
   let saveTimer = 0;
   const persistNote = async () => {
@@ -553,24 +597,28 @@ async function bindAnalystActions(data) {
 
   if (mispBtn) {
     mispBtn.addEventListener('click', async () => {
-      mispBtn.disabled = true;
+      if (!ready || busy || mispAdded) return;
+      setBusy(true);
       mispBtn.textContent = 'Adding…';
       noteStatus.textContent = 'Submitting IOC to MISP…';
       const response = await sendRuntimeMessage({
         type: 'ADD_IOC_TO_MISP',
         payload: {
           ioc: data?.ioc,
-          comment: noteField.value
+          comment: noteField.value,
+          tlp: confirmedTlp
         }
       }, { ok: false, error: 'MISP add failed.' });
       if (response?.ok) {
+        mispAdded = true;
+        setBusy(false);
         noteStatus.textContent = response.data?.summary || 'IOC added to MISP.';
         mispBtn.textContent = 'Added to MISP';
         return;
       }
       noteStatus.textContent = response?.error || 'MISP add failed.';
       mispBtn.textContent = 'Add to MISP';
-      mispBtn.disabled = false;
+      setBusy(false);
     });
   }
 }
@@ -630,11 +678,22 @@ function renderResult(data) {
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="secondary" id="mustela-rerun">Re-run</button>
-        ${canAddToMisp ? '<button class="secondary" id="mustela-add-misp">Add to MISP</button>' : ''}
-        <button class="secondary" id="mustela-copy-export">Copy export</button>
-        <button class="secondary" id="mustela-download-export">Download JSON</button>
+        ${canAddToMisp ? '<button class="secondary" id="mustela-add-misp" disabled>Add to MISP</button>' : ''}
+        <button class="secondary" id="mustela-copy-export" disabled>Copy export</button>
+        <button class="secondary" id="mustela-download-export" disabled>Download JSON</button>
       </div>
       <div style="padding:12px 14px;border-radius:18px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:grid;gap:8px;">
+        <label for="mustela-tlp">TLP</label>
+        <select id="mustela-tlp" aria-describedby="mustela-tlp-help mustela-tlp-status" disabled>
+          <option value="">Not classified</option>
+          <option value="clear">TLP:CLEAR</option>
+          <option value="green">TLP:GREEN</option>
+          <option value="amber">TLP:AMBER</option>
+          <option value="amber+strict">TLP:AMBER+STRICT</option>
+          <option value="red">TLP:RED</option>
+        </select>
+        <div id="mustela-tlp-help">A sharing label, not a network control. Check the recipient before sharing.</div>
+        <div id="mustela-tlp-status" role="status" aria-live="polite">Loading sharing label…</div>
         <label for="mustela-analyst-note" style="font-size:12px;font-weight:700;opacity:.86;">Analyst note</label>
         <textarea id="mustela-analyst-note" rows="4" placeholder="Add a local note for this IOC investigation" style="width:100%;resize:vertical;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(15,23,42,.12);color:inherit;padding:10px 12px;font:inherit;"></textarea>
         <div id="mustela-note-status" style="font-size:12px;opacity:.72;">Local note stays on this browser only.</div>
