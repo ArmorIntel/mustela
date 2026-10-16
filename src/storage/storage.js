@@ -167,16 +167,35 @@ export async function getSettings() {
   };
 }
 
-export async function saveSettings(settings) {
-  const sanitized = {
-    ...DEFAULT_SETTINGS,
-    ...(settings || {}),
-    detectionMode: settings?.detectionMode === 'strict' ? 'strict' : 'balanced',
-    providers: { ...DEFAULT_SETTINGS.providers, ...((settings || {}).providers || {}) },
-    analystAssist: { ...DEFAULT_SETTINGS.analystAssist, ...((settings || {}).analystAssist || {}) }
-  };
-  await getStorageArea().set({ [SETTINGS_KEY]: sanitized });
-  return sanitized;
+// Pause has its own key and is never accepted through a stale settings snapshot.
+export async function getPauseState() {
+  const data = await getStorageArea().get('mustela_paused');
+  return { paused: data.mustela_paused === true };
+}
+
+export async function savePauseState(paused) {
+  await getStorageArea().set({ mustela_paused: paused });
+}
+
+let settingsWrite = Promise.resolve();
+export function saveSettings(settings) {
+  const result = settingsWrite.then(async () => {
+    const current = await getSettings();
+    const { paused, ...patch } = settings || {};
+    const sanitized = {
+      ...current,
+      ...patch,
+      detectionMode: (patch.detectionMode ?? current.detectionMode) === 'strict' ? 'strict' : 'balanced',
+      providers: Object.fromEntries(Object.entries(current.providers).map(([id, config]) => [
+        id, { ...config, ...(patch.providers?.[id] || {}) }
+      ])),
+      analystAssist: { ...current.analystAssist, ...(patch.analystAssist || {}) }
+    };
+    await getStorageArea().set({ [SETTINGS_KEY]: sanitized });
+    return sanitized;
+  });
+  settingsWrite = result.catch(() => undefined);
+  return result;
 }
 
 export async function getHistory() {

@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Align privacy documentation, README, and public-site wording with MISP requests, automatic Analyst Assist summaries, selected-history correlation, and local LLM-response storage. No runtime behavior or permissions changed.
 
 ### Security
+- Add a persistent background transmission pause, independent of preferences, guarding investigations, pivots, correlation, MISP writes, configuration tests, and follow-up provider/LLM calls. Resuming never replays interrupted work; already-started requests and previously opened websites are not cancelled. Includes the background message contract only, without new permissions or UI controls.
 - Protect literal IPv4 addresses in the listed private/reserved ranges from public lookups, pivots, cached public results, and Analyst Assist summaries/correlation, including local LLM endpoints. Keep detection, notes, and exports available, with an Internal / reserved badge; configured MISP lookups and explicit adds still send the IOC to MISP. No permission changes.
 - Update the locked CRX packaging dependency `protocol-buffers-schema` from 3.6.0 to 3.6.1 to fix prototype pollution (GHSA-j452-xhg8-qg39), with a parser regression test. Extension permissions and outgoing data are unchanged.
 
