@@ -72,6 +72,10 @@ Then load `dist/chrome` with **Load unpacked** in `chrome://extensions` (same st
 
 Mustela detects and highlights IOC out of the box — no API keys required.
 
+Literal IPv4 addresses in the supported private/reserved ranges stay detected and highlighted, with an **Internal / reserved** badge in the investigation panel and manual lookup. VirusTotal, AbuseIPDB, Shodan, and their external pivots are blocked before cache reuse, regardless of keys or reruns. Analyst Assist summaries are skipped, even with a local endpoint; protected history entries are excluded from correlation before selection, with at least two eligible entries required. Blocking is not a clean verdict.
+
+Configured **MISP lookup** and explicit **Add to MISP** remain available: the IOC leaves the browser for the chosen MISP instance. Notes, copy, and local export remain usable with all integrations disabled. See [protected IPv4 scope and limitations](docs/PRIVACY_TRANSPARENCY.md#protected-ipv4-policy) for the exact ranges and non-goals.
+
 To get **enriched verdicts** (reputation scores, scan results, exposed-service data) inside the in-page panel, connect one or more free provider accounts.
 
 ### How to open the Options page

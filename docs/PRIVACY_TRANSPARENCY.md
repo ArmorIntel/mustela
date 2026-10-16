@@ -41,6 +41,20 @@ This storage remembers configuration and investigations and reduces repeated cal
 
 ## What leaves the browser
 
+### Protected IPv4 policy
+
+The following literal IPv4 ranges are protected: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, `192.0.2.0/24`, `198.51.100.0/24`, and `203.0.113.0/24`.
+
+- These IOC remain detected/highlighted and show **Internal / reserved** in the panel and manual lookup. Blocking does not imply a clean verdict.
+- VirusTotal, AbuseIPDB, and Shodan API lookups and website pivots are blocked for these IOC, including highlight, manual input, context menu, panel reopening, and Re-run paths. The policy precedes cache reuse: old public results, links, and LLM briefs are not reused.
+- Analyst Assist never generates a summary for these IOC, even after provider errors or with a local endpoint. Correlation excludes their history entries (including older entries without classification) **before** priority selection and the 10-entry limit. Fewer than two remaining eligible entries means no LLM request and an explanation in the UI. No endpoint URL grants an exception.
+- **MISP is an exception, not browser confinement.** Enabled/configured MISP lookup can still send the IOC to the chosen instance. Explicit **Add to MISP** can also send it; lookup never adds automatically. Existing configuration and permission errors still apply. Protected lookups bypass the investigation cache, so a configured MISP lookup may run again on reopening.
+- With all integrations disabled, detection, the badge/explanation, analyst notes, copy, and local exports need no network provider.
+
+This is a policy for those literal IPv4 IOC and their investigation entries, **not** general text redaction. It does not classify IPv6, subnets/CIDRs, DNS resolutions, addresses inside URLs, other special ranges, or arbitrary page/provider text and metadata. An eligible public IOC's free text/page context may still contain sensitive information. It does not undo disclosures made before this policy. Configuration tests still contact their configured destinations as described below; public probe addresses are not protected.
+
+The operations below apply subject to this policy.
+
 ### Operations and destinations
 
 Paths below are relative to the selected instance/endpoint base URL where applicable. API-key validation is itself a network operation, not an investigation prompt.
@@ -79,11 +93,11 @@ The summary prompt includes:
 
 Provider API keys are **not added to the LLM prompt**. The LLM key authenticates the request to the selected endpoint, and the model name is sent in the request body. The prompt does not contain the entire page or all raw MISP data. Nevertheless, provider summaries and page URL/title can reveal internal investigation context.
 
-Provider errors do not suppress the automatic summary: a configured Analyst Assist request can run even if some provider enrichments fail. Without its required configuration, or when disabled, this automatic summary does not run. Likewise, automatic MISP lookup requires enablement, base URL, and API key. Missing keys do not prevent manual pivots or configuration tests supplied with credentials.
+For eligible IOC, provider errors do not suppress the automatic summary: a configured Analyst Assist request can run even if some provider enrichments fail. Without its required configuration, or when disabled, this automatic summary does not run. Likewise, automatic MISP lookup requires enablement, base URL, and API key. Missing keys do not prevent manual pivots or configuration tests supplied with credentials.
 
 ### Correlation selection
 
-The dedicated correlation action selects up to **10 history entries**, prioritized by threat verdict and then recency, with at least **2** required. It sends IOC/type, verdict, score, tags, `seenCount`, and associated page URL/title when available, plus current-page URL/title if supplied. It does **not** send the entire history or free-form analyst notes.
+The dedicated correlation action first excludes protected IPv4 entries, then selects up to **10 eligible history entries**, prioritized by threat verdict and then recency, with at least **2** eligible entries required. It sends IOC/type, verdict, score, tags, `seenCount`, and associated page URL/title when available, plus current-page URL/title if supplied. It does **not** send the entire history or free-form analyst notes.
 
 ### Cache, failures, and recipient policies
 

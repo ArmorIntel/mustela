@@ -1,4 +1,4 @@
-import { IOC_TYPES } from '../shared/ioc.js';
+import { IOC_TYPES, isProtectedIoc, PUBLIC_LOOKUP_BLOCK_REASON } from '../shared/ioc.js';
 import { validateTlp } from '../shared/tlp.js';
 
 const PROVIDER_FETCH_TIMEOUT_MS = 12000;
@@ -23,10 +23,12 @@ function normalizeBaseUrl(baseUrl) {
 }
 
 function buildVirusTotalUrl(ioc) {
+  if (isProtectedIoc(ioc)) return '';
   return `https://www.virustotal.com/gui/search/${encodeURIComponent(ioc.normalized)}`;
 }
 
 function buildAbuseIpDbUrl(ioc) {
+  if (isProtectedIoc(ioc)) return '';
   if (ioc.type === IOC_TYPES.SUBNET) {
     return `https://www.abuseipdb.com/check-block/${encodeURIComponent(ioc.normalized)}`;
   }
@@ -34,6 +36,7 @@ function buildAbuseIpDbUrl(ioc) {
 }
 
 function buildShodanUrl(ioc) {
+  if (isProtectedIoc(ioc)) return '';
   if (ioc.type === IOC_TYPES.ASN) {
     return `https://www.shodan.io/search?query=${encodeURIComponent(ioc.normalized)}`;
   }
@@ -128,6 +131,7 @@ function extractMispAddedAttribute(payload) {
 }
 
 async function vtLookup(ioc, configOrKey) {
+  if (isProtectedIoc(ioc)) throw new Error(PUBLIC_LOOKUP_BLOCK_REASON);
   const headers = { 'x-apikey': readApiKey(configOrKey) };
   let url;
   if (ioc.type === IOC_TYPES.IP) url = `https://www.virustotal.com/api/v3/ip_addresses/${encodeURIComponent(ioc.normalized)}`;
@@ -151,6 +155,7 @@ async function vtLookup(ioc, configOrKey) {
 }
 
 async function abuseLookup(ioc, configOrKey) {
+  if (isProtectedIoc(ioc)) throw new Error(PUBLIC_LOOKUP_BLOCK_REASON);
   const apiKey = readApiKey(configOrKey);
   let url;
   if (ioc.type === IOC_TYPES.SUBNET) {
@@ -212,6 +217,7 @@ async function abuseLookup(ioc, configOrKey) {
 }
 
 async function shodanLookup(ioc, configOrKey) {
+  if (isProtectedIoc(ioc)) throw new Error(PUBLIC_LOOKUP_BLOCK_REASON);
   const apiKey = readApiKey(configOrKey);
   const url = ioc.type === IOC_TYPES.ASN
     ? `https://api.shodan.io/shodan/host/search?key=${encodeURIComponent(apiKey)}&query=${encodeURIComponent(ioc.normalized)}`
@@ -394,7 +400,8 @@ export function getProviderById(providerId) {
 
 export function isProviderSupportedForIoc(providerId, ioc) {
   const provider = getProviderById(providerId);
-  return !!(provider && ioc?.type && provider.supportedTypes.includes(ioc.type));
+  return !!(provider && ioc?.type && provider.supportedTypes.includes(ioc.type)
+    && (provider.external === false || !isProtectedIoc(ioc)));
 }
 
 export function getSupportedExternalProviders(ioc) {
