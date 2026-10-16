@@ -3,6 +3,11 @@ import { generateCorrelationAnalysis, generateInvestigationSummary, validateOpen
 import { addIocToMisp, isProviderSupportedForIoc, PROVIDERS } from '../providers/providers.js';
 import { addHistory, clearCache, clearDisabledPages, clearHistory, getCachedResult, getDetectedForTab, getHistory, getHistoryEntry, getSettings, isPageDisabled, saveDetectedForTab, saveHistoryNote, saveHistoryTlp, saveSettings, setCachedResult, setPageDisabled, toggleHistoryPin } from '../storage/storage.js';
 
+import { createTransmissionGate, pauseFailure } from './pause.js';
+
+const transmissions = createTransmissionGate();
+const TRANSMISSION_MESSAGES = new Set(['LOOKUP_IOC', 'OPEN_EXTERNAL_PROVIDER', 'CORRELATE_IOCS', 'ADD_IOC_TO_MISP', 'TEST_API_KEY']);
+
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/welcome/welcome.html') });
@@ -72,42 +77,56 @@ async function openInvestigationPanel(ioc, tab) {
 }
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  try {
+    const token = await transmissions.begin();
+    return await handleInvestigationMenu(info, tab, token);
+  } catch (error) {
+    const failure = pauseFailure(error);
+    if (tab?.id) {
+      await chrome.tabs.sendMessage(tab.id, { type: 'MUSTELA_ACTION_BLOCKED', ...failure }).catch(() => undefined);
+    }
+    return failure;
+  }
+});
+
+async function handleInvestigationMenu(info, tab, token) {
   const detected = detectSingleIoc(info.selectionText || '');
   if (!detected) return;
 
   if (isProtectedIoc(detected) && ['open-virustotal', 'open-abuseipdb', 'open-shodan'].includes(info.menuItemId)) {
     // Explain the blocked pivot in the panel instead of silently doing nothing.
-    await openInvestigationPanel(detected, tab);
+    await transmissions.run(token, () => openInvestigationPanel(detected, tab));
     return;
   }
 
   if (info.menuItemId === 'open-virustotal') {
     const url = PROVIDERS.virustotal.buildExternalUrl?.(detected);
-    if (url) await chrome.tabs.create({ url });
+    if (url) await transmissions.run(token, () => chrome.tabs.create({ url }));
     return;
   }
   if (info.menuItemId === 'open-abuseipdb' && isProviderSupportedForIoc('abuseipdb', detected)) {
     const url = PROVIDERS.abuseipdb.buildExternalUrl?.(detected);
-    if (url) await chrome.tabs.create({ url });
+    if (url) await transmissions.run(token, () => chrome.tabs.create({ url }));
     return;
   }
   if (info.menuItemId === 'open-shodan' && isProviderSupportedForIoc('shodan', detected)) {
     const url = PROVIDERS.shodan.buildExternalUrl?.(detected);
-    if (url) await chrome.tabs.create({ url });
+    if (url) await transmissions.run(token, () => chrome.tabs.create({ url }));
     return;
   }
   if (info.menuItemId !== 'investigate-selection') return;
-  await openInvestigationPanel(detected, tab);
-});
+  await transmissions.run(token, () => openInvestigationPanel(detected, tab));
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   handleMessage(message, sender).then(sendResponse).catch((error) => {
-    sendResponse({ ok: false, error: error.message || String(error) });
+    sendResponse(pauseFailure(error));
   });
   return true;
 });
 
 async function handleMessage(message, sender) {
+  const token = TRANSMISSION_MESSAGES.has(message?.type) ? await transmissions.begin() : undefined;
   switch (message?.type) {
     case 'PAGE_IOCS_DETECTED': {
       const tabId = sender.tab?.id;
@@ -120,6 +139,10 @@ async function handleMessage(message, sender) {
       const tabId = message.payload?.tabId;
       return { ok: true, data: await getDetectedForTab(tabId) };
     }
+    case 'GET_PAUSE_STATE':
+      return { ok: true, data: await transmissions.getState() };
+    case 'SET_PAUSE_STATE':
+      return { ok: true, data: await transmissions.setState(message.payload?.paused) };
     case 'GET_SETTINGS':
       return { ok: true, data: await getSettings() };
     case 'SAVE_SETTINGS': {
@@ -134,7 +157,7 @@ async function handleMessage(message, sender) {
       return { ok: true, data: saved };
     }
     case 'LOOKUP_IOC':
-      return { ok: true, data: await lookupIoc(message.payload, sender) };
+      return { ok: true, data: await lookupIoc(message.payload, sender, token) };
     case 'OPEN_EXTERNAL_PROVIDER': {
       const provider = PROVIDERS[message.payload?.provider];
       const ioc = message.payload?.ioc;
@@ -143,7 +166,7 @@ async function handleMessage(message, sender) {
       if (!isProviderSupportedForIoc(provider.id, ioc)) return { ok: false, error: 'Unsupported IOC for provider' };
       const url = provider.buildExternalUrl(ioc);
       if (!url) return { ok: false, error: 'External lookup unavailable' };
-      await chrome.tabs.create({ url });
+      await transmissions.run(token, () => chrome.tabs.create({ url }));
       return { ok: true, data: { url } };
     }
     case 'GET_HISTORY':
@@ -172,12 +195,12 @@ async function handleMessage(message, sender) {
     case 'TEST_API_KEY': {
       const providerId = message.payload?.provider;
       if (providerId === 'llm') {
-        const result = await validateOpenAiCompatibleConfig(message.payload);
+        const result = await transmissions.run(token, () => validateOpenAiCompatibleConfig(message.payload));
         return { ok: true, data: { valid: !!result.ok, limited: !!result.limited, message: result.message || (result.ok ? 'Connection valid' : 'Validation failed') } };
       }
       const provider = PROVIDERS[providerId];
       if (!provider || !provider.validateApiKey) return { ok: false, error: 'Unsupported provider' };
-      const result = await provider.validateApiKey(message.payload);
+      const result = await transmissions.run(token, () => provider.validateApiKey(message.payload, () => transmissions.run(token, () => undefined)));
       return { ok: true, data: { valid: !!result.ok, limited: !!result.limited, message: result.message || (result.ok ? 'API key valid' : 'Invalid API key') } };
     }
     case 'CORRELATE_IOCS': {
@@ -190,18 +213,18 @@ async function handleMessage(message, sender) {
       const entries = selectCorrelationEntries(history);
       if (entries.length < 2) return { ok: false, error: 'Not enough eligible investigation history for correlation: internal/reserved IPv4 entries are excluded; at least two eligible entries are required.' };
       const { pageUrl = '', pageTitle = '' } = message?.payload || {};
-      const result = await generateCorrelationAnalysis(entries, llm, { pageUrl, pageTitle });
+      const result = await transmissions.run(token, () => generateCorrelationAnalysis(entries, llm, { pageUrl, pageTitle }));
       return { ok: true, data: result };
     }
     case 'ADD_IOC_TO_MISP': {
       const settings = await getSettings();
       const ioc = message.payload?.ioc;
       if (!ioc?.normalized || !ioc?.type) return { ok: false, error: 'Invalid IOC' };
-      const result = await addIocToMisp(ioc, settings.providers?.misp || {}, {
+      const result = await transmissions.run(token, () => addIocToMisp(ioc, settings.providers?.misp || {}, {
         eventId: message.payload?.eventId,
         comment: message.payload?.comment,
         tlp: message.payload?.tlp
-      });
+      }));
       return { ok: true, data: result };
     }
     default:
@@ -327,13 +350,14 @@ function buildProviderCacheProfile(settings = {}) {
   });
 }
 
-async function maybeAttachLlmSummary(settings, investigation) {
+async function maybeAttachLlmSummary(settings, investigation, token) {
+  transmissions.run(token, () => undefined);
   if (isProtectedIoc(investigation.ioc)) return investigation;
   const llm = settings?.analystAssist || {};
   if (!llm.enabled || !llm.baseUrl || !llm.apiKey || !llm.model) return investigation;
 
   try {
-    const summary = await generateInvestigationSummary(investigation, llm);
+    const summary = await transmissions.run(token, () => generateInvestigationSummary(investigation, llm));
     return {
       ...investigation,
       llmSummary: summary
@@ -350,7 +374,7 @@ async function maybeAttachLlmSummary(settings, investigation) {
   }
 }
 
-async function lookupIoc(ioc, sender = {}) {
+async function lookupIoc(ioc, sender = {}, token) {
   const protectedIpv4 = isProtectedIoc(ioc);
   const settings = await getSettings();
   const providerFingerprint = btoa(buildProviderCacheProfile(settings));
@@ -370,6 +394,7 @@ async function lookupIoc(ioc, sender = {}) {
 
   const results = [];
   for (const [providerId, provider] of Object.entries(PROVIDERS)) {
+    transmissions.run(token, () => undefined);
     if (protectedIpv4 && provider.external !== false) {
       results.push({ provider: provider.name, success: false, blocked: true, summary: PUBLIC_LOOKUP_BLOCK_REASON });
       continue;
@@ -393,7 +418,7 @@ async function lookupIoc(ioc, sender = {}) {
       continue;
     }
     try {
-      const result = await provider.lookup(ioc, providerSettings);
+      const result = await transmissions.run(token, () => provider.lookup(ioc, providerSettings));
       results.push({ timestamp: new Date().toISOString(), ...result });
     } catch (error) {
       const humanMessage = humanizeProviderError(error, provider.name);
@@ -414,7 +439,7 @@ async function lookupIoc(ioc, sender = {}) {
     ...summary,
     timestamp: new Date().toISOString()
   };
-  const enrichedInvestigation = await maybeAttachLlmSummary(settings, investigation);
+  const enrichedInvestigation = await maybeAttachLlmSummary(settings, investigation, token);
   const cacheWrite = await setCachedResult(cacheKey, enrichedInvestigation);
   await rememberInvestigation(ioc, enrichedInvestigation, sender);
   if (cacheWrite && cacheWrite.quota) {
