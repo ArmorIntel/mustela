@@ -37,6 +37,37 @@ function isValidIpv4(value) {
   });
 }
 
+// Validate the whole literal before canonicalizing; no URL/DNS parser or network.
+function canonicalIpv6(value) {
+  if (value.length > 45 || !/^[0-9a-f:.]+$/i.test(value) || !value.includes(':')) return null;
+  let address = value.toLowerCase();
+  if (address.includes('.')) {
+    const tail = address.slice(address.lastIndexOf(':') + 1);
+    if (!/^(?:0|[1-9]\d{0,2})(?:\.(?:0|[1-9]\d{0,2})){3}$/.test(tail) || !isValidIpv4(tail)) return null;
+    const [a, b, c, d] = tail.split('.').map(Number);
+    address = `${address.slice(0, address.lastIndexOf(':') + 1)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const halves = address.split('::');
+  if (halves.length > 2) return null;
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const count = left.length + right.length;
+  if (halves.length === 1 ? count !== 8 : count >= 8) return null;
+  if (![...left, ...right].every((part) => /^[0-9a-f]{1,4}$/.test(part))) return null;
+  const groups = [...left, ...Array(8 - count).fill('0'), ...right].map((part) => Number.parseInt(part, 16).toString(16));
+  let bestStart = -1;
+  let bestLength = 1; // Never compress a single zero; retain the first tied run.
+  for (let start = 0; start < groups.length;) {
+    if (groups[start] !== '0') { start += 1; continue; }
+    let end = start;
+    while (end < groups.length && groups[end] === '0') end += 1;
+    if (end - start > bestLength) { bestStart = start; bestLength = end - start; }
+    start = end;
+  }
+  if (bestStart < 0) return groups.join(':');
+  return `${groups.slice(0, bestStart).join(':')}::${groups.slice(bestStart + bestLength).join(':')}`;
+}
+
 // Deliberately limited to these literal IPv4 ranges, not DNS, URLs or CIDRs.
 function classifyIpv4(value) {
   if (typeof value !== 'string' || !isValidIpv4(value)) return null;
@@ -89,7 +120,7 @@ function normalizeIoc(raw, type) {
     case IOC_TYPES.DOMAIN:
       return refangDots(value).toLowerCase().replace(/^\.+|\.+$/g, '');
     case IOC_TYPES.IP:
-      return refangDots(value);
+      return canonicalIpv6(value) ?? refangDots(value);
     case IOC_TYPES.MD5:
     case IOC_TYPES.SHA1:
     case IOC_TYPES.SHA256:
@@ -185,7 +216,31 @@ function parseIocsFromText(text, options = {}) {
     pushUnique(results, { type: IOC_TYPES.URL, raw, normalized, index: match.index ?? 0, length: raw.length, confidence: scoreDetectionConfidence(IOC_TYPES.URL, normalized) });
   }
 
+  // Consume maximal colon-bearing tokens, including invalid/unsupported forms.
+  // Reserving their ranges prevents accepting a suffix or a nested IPv4/CIDR.
+  // Log labels/ports are not IPv6 prefixes. For dotted tokens, reserve only
+  // compressed forms or a hexadecimal group prefix before the first IPv4 octet.
+  const colonTokens = [...text.matchAll(/[a-z0-9_.:%/\-]+/gi)].filter(([raw]) => {
+    if (raw.indexOf(':') === raw.lastIndexOf(':')) return false;
+    if (!raw.includes('.') || raw.includes('::')) return true;
+    const prefix = raw.slice(0, raw.lastIndexOf(':', raw.indexOf('.')) + 1);
+    return /^[0-9a-f:]+:$/i.test(prefix);
+  });
+  const insideColonToken = (match) => colonTokens.some((token) => match.index >= token.index && match.index < token.index + token[0].length);
+  for (const token of colonTokens) {
+    const raw = token[0].replace(/\.+$/, '');
+    const normalized = canonicalIpv6(raw);
+    const before = text.slice(Math.max(0, token.index - 3), token.index);
+    const end = token.index + token[0].length;
+    const after = text.slice(end, end + 3);
+    if (!normalized || /^\][/%]/.test(after)
+      || /(?:\[:\]|\[\.\]|\(\.\))$/.test(before)
+      || /^(?:\[:\]|\[\.\]|\(\.\))/.test(after)) continue;
+    pushUnique(results, { type: IOC_TYPES.IP, raw, normalized, index: token.index, length: raw.length, confidence: scoreDetectionConfidence(IOC_TYPES.IP, normalized) });
+  }
+
   for (const match of text.matchAll(SUBNET_CANDIDATE)) {
+    if (insideColonToken(match)) continue;
     const raw = match[0];
     if (!isValidSubnet(raw)) continue;
     const normalized = normalizeIoc(raw, IOC_TYPES.SUBNET);
@@ -193,6 +248,7 @@ function parseIocsFromText(text, options = {}) {
   }
 
   for (const match of text.matchAll(IPV4_CANDIDATE)) {
+    if (insideColonToken(match)) continue;
     const raw = match[0];
     if (!isValidIpv4(normalizeIoc(raw, IOC_TYPES.IP))) continue;
     const insideSubnet = results.some((entry) => entry.type === IOC_TYPES.SUBNET && (match.index ?? 0) >= entry.index && (match.index ?? 0) < entry.index + entry.length);

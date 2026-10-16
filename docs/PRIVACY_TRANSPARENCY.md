@@ -17,7 +17,7 @@ This page explains local storage, outgoing requests and their triggers, and what
 
 The extension may process:
 
-- IOC visible on the current page or entered for investigation: IPv4, domains, URLs, MD5/SHA1/SHA256, and subnet/ASN where supported.
+- IOC visible on the current page or entered for investigation: IPv4 and IPv6, domains, URLs, MD5/SHA1/SHA256, and subnet/ASN where supported.
 - Page URL and title, when available, for investigation context and local history. These may also enter Analyst Assist prompts; the extension does not send the full page to the LLM.
 - Provider configuration: enabled flags and API keys; MISP base URL and default event ID.
 - Analyst Assist configuration: enabled flag, base URL, API key, and model name.
@@ -27,6 +27,12 @@ The extension may process:
 ### Defanged investigation values
 
 Supported defanged URLs, domains and IPv4 keep their source spelling and positions on the page. The investigation value refangs `hxxp`/`hxxps`, scheme `[:]`, and host `[.]`/`(.)` separators only; path/query text is not refanged. For example, `hxxps[:]//evil[.]test/a[.]b` becomes `https://evil.test/a[.]b`. Scanning is local and neither activates a target link nor requests the IOC target/provider. Existing investigation actions use the normalized value in the panel, cache, local history, configured provider/Analyst Assist flows and supported explicit pivots. Those actions can transmit that value under the existing rules below; this is not a promise to keep refanged values local. No recipient or permission is added.
+
+### IPv6 investigation values
+
+Full/compressed IPv6 and valid IPv4 tails use the existing `ip` type. Source spelling and offsets remain local; normalized investigation values are lowercase, compress the longest zero run (first tie, never a single zero), and convert dotted tails to hexadecimal (`::ffff:192.0.2.1` → `::ffff:c000:201`). Surrounding brackets are not part of a standalone IP; HTTP(S) URLs with bracketed IPv6 stay single URL indicators. IPv6 CIDR, zone IDs and refang are not supported.
+
+Detection/highlighting makes no target or provider request and never automatically navigates to the address. Existing explicit investigation, copy/export, local history, configured provider/MISP requests, Analyst Assist and website pivots use the normalized value with the same recipients and triggers documented below. MISP IP search uses `ip-src`/`ip-dst`; explicit adds use `ip-dst`. Third-party IPv6 support varies; errors/timeouts do not establish a clean verdict or prevent other results. The protected IPv4 policy does not classify IPv6, including loopback, private and IPv4-mapped literals: check sensitivity and recipients before investigating. No permissions, telemetry or credentials requirement are added.
 
 ## What stays local
 

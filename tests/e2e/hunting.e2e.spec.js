@@ -128,8 +128,20 @@ test('IOC copy and Enter investigation remain independent of query copy', async 
     await popup.locator('[data-copy-value="8.8.8.8"]').first().click();
     expect(await popup.evaluate(() => window.copiedIocs)).toEqual(['8.8.8.8']);
     await popup.locator('#manualInput').fill('1.1.1.1');
+    // Enter opens the panel and closes this window on keydown. Gate only the
+    // close until Playwright has finished keyup, rather than racing a dead page.
+    await popup.evaluate(() => {
+      window.finishClose = window.close.bind(window);
+      window.closeRequested = false;
+      window.close = () => { window.closeRequested = true; };
+    });
     await popup.locator('#manualInput').press('Enter');
+    await expect.poll(() => popup.evaluate(() => window.closeRequested)).toBe(true);
     await expect(page.locator('.mustela-panel')).toContainText('1.1.1.1');
+    await Promise.all([
+      popup.waitForEvent('close'),
+      popup.evaluate(() => { setTimeout(() => window.finishClose(), 0); })
+    ]);
   } finally {
     await extension.close();
     await server.close();

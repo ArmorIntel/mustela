@@ -55,6 +55,36 @@ globalThis.chrome = {
 };
 await import('../src/background/background.js');
 test('defanged selections share normalized panels, history and partial provider failures', testDefangedSelections);
+test('IPv6 selection and lookup keep canonical history and isolate provider failures', async (t) => {
+  const raw = '2001:0DB8:0:0:0:0:0:1';
+  const ioc = detectSingleIoc(raw);
+  configure({ keys: false });
+  t.mock.method(globalThis, 'fetch', async () => { throw new Error('Unexpected keyless fetch'); });
+  await menuListener({ menuItemId: 'investigate-selection', selectionText: raw }, { id: 7 });
+  assert.equal(panels[0].message.payload.normalized, '2001:db8::1');
+  const keyless = await send('LOOKUP_IOC', ioc);
+  assert.equal(keyless.data.overallVerdict, 'unknown');
+  assert.equal(store.mustela_history[0].ioc.normalized, '2001:db8::1');
+  assert.deepEqual(navigations, []);
+  for (const partial of [false, true]) {
+    for (const failure of ['HTTP', 'timeout']) {
+      configure();
+      store.mustela_settings.analystAssist.enabled = false;
+      t.mock.method(globalThis, 'fetch', async (url) => {
+        if (partial && url.includes('virustotal')) return new Response(JSON.stringify({ data: { attributes: { last_analysis_stats: { malicious: 5 } } } }));
+        if (failure === 'timeout') throw new DOMException('Timed out', 'AbortError');
+        return new Response('{}', { status: 422 });
+      });
+      const result = await send('LOOKUP_IOC', { ...ioc, _rerun: 1 });
+      assert.equal(result.ok, true);
+      assert.equal(result.data.providerResults.filter((r) => r.success).length, partial ? 1 : 0);
+      assert.ok(result.data.providerResults.some((r) => !r.success && r.error));
+      assert.equal(result.data.overallVerdict, partial ? 'suspicious' : 'unknown');
+      assert.deepEqual(navigations, []);
+    }
+  }
+});
+
 const send = (type, payload) => new Promise((resolve) => listener({ type, payload }, {}, resolve));
 const ip = (normalized) => ({ type: 'ip', normalized });
 function configure({ keys = true, enabled = true, misp = false } = {}) {

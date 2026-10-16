@@ -284,6 +284,7 @@ Mustela automatically detects the following indicator types on any page:
 | Type | Examples |
 |---|---|
 | IPv4 address | `192.168.1.1`, `8.8.8.8` |
+| IPv6 address (same IP type) | `2001:db8::1`, `::1`, `::`, `::ffff:192.0.2.1` → `::ffff:c000:201`; full/compressed literals, optional surrounding brackets; no CIDR, zone IDs or refang |
 | IPv4 subnet | `10.0.0.0/8` |
 | ASN | `AS15169` |
 | Domain | `evil.example.com` |

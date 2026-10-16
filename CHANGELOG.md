@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- Detect full/compressed IPv6 and valid IPv4 tails as the existing IP type, preserving source ranges and using canonical values for investigations, history, encoded provider pivots and explicit MISP adds. Standalone brackets are excluded; IPv6 URLs retain URL precedence. CIDR, zone IDs and IPv6 private/reserved classification are not supported; no new permissions or scan traffic.
 - Accessible global ON/OFF control in the popup, synchronized to confirmed pause state with retryable save errors. OFF removes annotations/indicators, closes panels, suspends scans across tabs and persists across page/worker restarts; ON respects highlighting and URL preferences without replaying investigations. Already-transmitted data cannot be recalled. No new permissions or recipients.
 - Recognize defanged HTTP(S) URLs, domains and IPv4 with `hxxp`/`hxxps`, scheme `[:]`, and host `[.]`/`(.)` separators. Preserve source text and highlight positions; use refanged investigation values for existing lookups, history and pivots without new permissions or scan traffic.
 - Local **Copy Defender KQL** action in popup manual lookup for a single IPv4, domain, HTTP(S) URL or MD5/SHA1/SHA256, with strict input validation, escaped literals, a 7-day Defender XDR template and accessible clipboard success/failure feedback. No provider connection, history write or permission change.
