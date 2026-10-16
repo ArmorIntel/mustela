@@ -141,8 +141,19 @@ async function handleMessage(message, sender) {
     }
     case 'GET_PAUSE_STATE':
       return { ok: true, data: await transmissions.getState() };
-    case 'SET_PAUSE_STATE':
-      return { ok: true, data: await transmissions.setState(message.payload?.paused) };
+    case 'SET_PAUSE_STATE': {
+      const state = await transmissions.setState(message.payload?.paused);
+      const notification = { type: 'PAUSE_STATE_UPDATED', payload: state };
+      // Restricted/closed tabs must not prevent other pages receiving the transition.
+      try {
+        const tabs = await chrome.tabs.query({});
+        await Promise.allSettled(tabs.filter((tab) => typeof tab.id === 'number').map(async (tab) => {
+          await chrome.tabs.sendMessage(tab.id, notification);
+        }));
+      } catch {}
+      try { await chrome.runtime.sendMessage(notification); } catch {}
+      return { ok: true, data: state };
+    }
     case 'GET_SETTINGS':
       return { ok: true, data: await getSettings() };
     case 'SAVE_SETTINGS': {

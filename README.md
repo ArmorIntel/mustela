@@ -68,11 +68,13 @@ Then load `dist/chrome` with **Load unpacked** in `chrome://extensions` (same st
 
 ---
 
-## Global transmission pause (background contract)
+## Global pause
 
-The background supports a persistent global circuit breaker, separate from highlighting, disabled-page rules, and provider/LLM settings. Existing installations default to ON. This change provides the background contract only: no popup switch, badge, or keyboard shortcut is included yet.
+Use the named **Mustela ON — pause / Mustela OFF — resume** button in the popup to control all pages, independently of the page-exclusion button. The control works with the keyboard, shows only the confirmed background state, stays synchronized across open/reopened popups, and offers a retry if saving fails. Existing installations default to ON. No badge or keyboard shortcut is included.
 
-Extension interfaces can send `GET_PAUSE_STATE` or `SET_PAUSE_STATE` with `payload: { paused: true }` (OFF) / `{ paused: false }` (ON). Success is `{ ok: true, data: { paused: boolean } }` only after local persistence. Storage failures return an explicit retryable error, not an OFF confirmation. Use this contract rather than writing storage directly.
+OFF immediately removes IOC highlights and detection indicators from loaded pages, closes investigation panels, and suspends scans even when the page changes. New/reloaded pages and a restarted background worker respect the saved pause. ON resumes detection only where URL rules allow it and highlighting was already enabled; it never reopens a panel or replays an investigation. Existing keys, preferences, history, and cache are preserved.
+
+Extension interfaces use `GET_PAUSE_STATE` or `SET_PAUSE_STATE` with `payload: { paused: true }` (OFF) / `{ paused: false }` (ON). Success is `{ ok: true, data: { paused: boolean } }` only after local persistence. Confirmed changes notify loaded pages and popups with `PAUSE_STATE_UPDATED`; unavailable or restricted tabs do not block other pages. Storage failures return an explicit retryable error, not an OFF confirmation. Use this contract rather than writing storage directly.
 
 Once OFF is confirmed, the background rejects investigations/reruns, provider pivots, correlation, MISP adds, API-key tests, and investigation context menus, even from an already-open interface or without API keys. Interrupted investigations cannot continue after ON; resuming preserves preferences and never replays blocked actions. Already-started requests may finish: pause does not recall transmitted data, delete remote data, or stop autonomous traffic from websites already open. See [the pause network contract](docs/PRIVACY_TRANSPARENCY.md#global-transmission-pause).
 

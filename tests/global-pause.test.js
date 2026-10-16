@@ -33,6 +33,27 @@ async function restart() { await import(`../src/background/background.js?worker=
 const send = (type, payload) => new Promise((resolve) => listener({ type, payload }, {}, resolve));
 const ip = { type: 'ip', normalized: '8.8.8.8' };
 const pause = (paused) => send('SET_PAUSE_STATE', { paused });
+test('confirmed transitions broadcast to every tab despite restricted failures, but failed writes do not broadcast', async (t) => {
+  await setup();
+  const delivered = [];
+  const notifications = [];
+  t.mock.method(chrome.tabs, 'query', async () => [{ id: 1 }, { id: 2 }, { id: 3 }, {}]);
+  t.mock.method(chrome.tabs, 'sendMessage', async (id, message) => {
+    delivered.push({ id, message });
+    if (id === 2) throw new Error('Restricted tab');
+  });
+  chrome.runtime.sendMessage = async (message) => { notifications.push(message); };
+  t.after(() => { delete chrome.runtime.sendMessage; });
+  assert.equal((await pause(true)).ok, true);
+  assert.deepEqual(delivered.map(({ id }) => id), [1, 2, 3]);
+  assert.ok(delivered.every(({ message }) => message.type === 'PAUSE_STATE_UPDATED' && message.payload.paused));
+  assert.equal(notifications.length, 1);
+  delivered.length = 0;
+  failWrite = true;
+  assert.equal((await pause(false)).ok, false);
+  assert.deepEqual(delivered, []);
+  assert.equal(notifications.length, 1);
+});
 function deferred() {
   let resolve;
   const promise = new Promise((done) => { resolve = done; });
