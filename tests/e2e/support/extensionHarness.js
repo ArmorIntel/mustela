@@ -45,7 +45,7 @@ export async function startFixtureServer() {
 
 export async function launchExtensionContext() {
   const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mustela-extension-e2e-'));
-  const context = await chromium.launchPersistentContext(userDataDir, {
+  const launchOptions = {
     headless: false,
     ignoreDefaultArgs: ['--disable-extensions'],
     args: [
@@ -54,7 +54,8 @@ export async function launchExtensionContext() {
       '--no-first-run',
       '--no-default-browser-check'
     ]
-  });
+  };
+  let context = await chromium.launchPersistentContext(userDataDir, launchOptions);
 
   const serviceWorker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
   const extensionId = new URL(serviceWorker.url()).host;
@@ -66,8 +67,13 @@ export async function launchExtensionContext() {
   }
 
   return {
-    context,
+    get context() { return context; },
     extensionId,
+    async restart() {
+      await context.close();
+      context = await chromium.launchPersistentContext(userDataDir, launchOptions);
+      await getServiceWorker(context);
+    },
     async close() {
       await context.close();
       await fs.rm(userDataDir, { recursive: true, force: true });

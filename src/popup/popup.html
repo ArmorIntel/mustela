@@ -117,6 +117,13 @@
       </button>
     </section>
 
+    <section class="panel" aria-label="Global activation">
+      <button id="globalPauseBtn" type="button" aria-label="Mustela active on all pages" aria-describedby="pauseHelp pauseStatus" aria-pressed="false" disabled>Checking global state…</button>
+      <p id="pauseHelp" class="muted">OFF removes annotations, closes investigation panels and blocks new sends on all pages. Data already sent cannot be recalled. ON keeps your existing preferences and never replays investigations.</p>
+      <div id="pauseStatus" role="status" aria-live="polite">Checking global state…</div>
+      <button id="pauseRetryBtn" type="button" hidden>Retry global change</button>
+    </section>
+
     <section class="panel">
       <div class="summary-row">
         <h2>Current page</h2>

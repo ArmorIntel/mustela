@@ -1,6 +1,50 @@
 import { isProviderSupportedForIoc } from '../providers/providers.js';
 import { detectSingleIoc, isProtectedIoc, PROTECTED_IPV4_EXPLANATION } from '../shared/ioc.js';
 
+// Never display an optimistic OFF: only the background owns durable pause state.
+export function createPauseController(send, render) {
+  let state = { paused: null, pending: false, error: '' };
+  let revision = 0;
+  let writing = false;
+  const update = (patch) => { state = { ...state, ...patch }; render({ ...state }); };
+  const read = async () => {
+    const response = await send('GET_PAUSE_STATE');
+    if (!response?.ok || typeof response.data?.paused !== 'boolean') {
+      throw new Error(response?.error || 'Unable to read pause state. Please retry.');
+    }
+    return response.data.paused;
+  };
+  async function refresh() {
+    const request = ++revision;
+    try {
+      const paused = await read();
+      if (request === revision) update({ paused, error: '' });
+    } catch (error) {
+      if (request === revision) update({ error: error.message || String(error) });
+    }
+  }
+  return {
+    refresh,
+    async toggle() {
+      if (writing) return;
+      if (state.paused === null) return refresh();
+      writing = true;
+      update({ pending: true, error: '' });
+      try {
+        const response = await send('SET_PAUSE_STATE', { paused: !state.paused });
+        if (!response?.ok) throw new Error(response?.error || 'Unable to save pause state. Please retry.');
+        await refresh();
+      } catch (error) {
+        await refresh();
+        update({ error: error.message || String(error) });
+      } finally {
+        writing = false;
+        update({ pending: false });
+      }
+    }
+  };
+}
+
 export function buildIocKey(ioc) {
   const type = String(ioc?.type || '').trim().toLowerCase();
   const normalized = String(ioc?.normalized || '').trim().toLowerCase();
