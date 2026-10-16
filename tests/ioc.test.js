@@ -48,6 +48,21 @@ test('IPv6 rejects whole malformed and unsupported tokens without nested IPv4 fr
 test('ordinary colon labels retain IPv4 and subnet detection', () => {
   assert.equal(detectSingleIoc('IP:8.8.8.8').normalized, '8.8.8.8');
   assert.equal(detectSingleIoc('network:8.8.8.0/24').type, 'subnet');
+  for (const mode of ['balanced', 'strict']) {
+    for (const [text, values, type] of [
+      ['IP:192.0.2.1:443', ['192.0.2.1'], 'ip'],
+      ['src:192.0.2.1:dst:198.51.100.2', ['192.0.2.1', '198.51.100.2'], 'ip'],
+      ['network:192.0.2.0/24:port:443', ['192.0.2.0/24'], 'subnet']
+    ]) {
+      const results = parseIocsFromText(text, { mode });
+      assert.deepEqual(results.map((r) => r.normalized), values, text);
+      for (const result of results) {
+        assert.equal(result.type, type);
+        assert.equal(result.index, text.indexOf(result.raw));
+        assert.equal(text.slice(result.index, result.index + result.length), result.raw);
+      }
+    }
+  }
 });
 
 test('normalizeIoc trims URL punctuation and lowercases domains/hashes', () => {

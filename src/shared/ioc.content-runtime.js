@@ -218,8 +218,14 @@ function parseIocsFromText(text, options = {}) {
 
   // Consume maximal colon-bearing tokens, including invalid/unsupported forms.
   // Reserving their ranges prevents accepting a suffix or a nested IPv4/CIDR.
-  // IPv6 needs at least two colons; a single-colon label must not hide IPv4.
-  const colonTokens = [...text.matchAll(/[a-z0-9_.:%/\-]+/gi)].filter((match) => match[0].indexOf(':') !== match[0].lastIndexOf(':'));
+  // Log labels/ports are not IPv6 prefixes. For dotted tokens, reserve only
+  // compressed forms or a hexadecimal group prefix before the first IPv4 octet.
+  const colonTokens = [...text.matchAll(/[a-z0-9_.:%/\-]+/gi)].filter(([raw]) => {
+    if (raw.indexOf(':') === raw.lastIndexOf(':')) return false;
+    if (!raw.includes('.') || raw.includes('::')) return true;
+    const prefix = raw.slice(0, raw.lastIndexOf(':', raw.indexOf('.')) + 1);
+    return /^[0-9a-f:]+:$/i.test(prefix);
+  });
   const insideColonToken = (match) => colonTokens.some((token) => match.index >= token.index && match.index < token.index + token[0].length);
   for (const token of colonTokens) {
     const raw = token[0].replace(/\.+$/, '');
