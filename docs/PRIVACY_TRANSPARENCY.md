@@ -24,6 +24,10 @@ The extension may process:
 - Investigation results, provider summaries/verdicts/confidence or errors, aggregate scores, tags, recommendations, and LLM responses.
 - Recent investigation history, occurrence counts, pinning metadata, and free-form analyst notes. Notes are not included in the LLM prompts described below; a comment explicitly submitted with **Add to MISP** is sent to MISP.
 
+### Defanged investigation values
+
+Supported defanged URLs, domains and IPv4 keep their source spelling and positions on the page. The investigation value refangs `hxxp`/`hxxps`, scheme `[:]`, and host `[.]`/`(.)` separators only; path/query text is not refanged. For example, `hxxps[:]//evil[.]test/a[.]b` becomes `https://evil.test/a[.]b`. Scanning is local and neither activates a target link nor requests the IOC target/provider. Existing investigation actions use the normalized value in the panel, cache, local history, configured provider/Analyst Assist flows and supported explicit pivots. Those actions can transmit that value under the existing rules below; this is not a promise to keep refanged values local. No recipient or permission is added.
+
 ## What stays local
 
 The following are stored in `chrome.storage.local` in the browser profile:

@@ -15,12 +15,12 @@ const IOC_TYPES = {
   ASN: 'asn'
 };
 
-const IPV4_CANDIDATE = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
+const IPV4_CANDIDATE = /\b(?:\d{1,3}(?:\.|\[\.\]|\(\.\))){3}\d{1,3}\b/g;
 const SUBNET_CANDIDATE = /\b(?:\d{1,3}\.){3}\d{1,3}\/(?:[0-9]|[12][0-9]|3[0-2])\b/g;
 const ASN_CANDIDATE = /\bAS(?:[1-9]\d{0,9})\b/gi;
-const URL_CANDIDATE = /\bhttps?:\/\/[^\s<>'"`]+/gi;
+const URL_CANDIDATE = /\b(?:https?|hxxps?)(?::|\[:\])\/\/[^\s<>'"`]+/gi;
 const HASH_CANDIDATE = /\b[a-fA-F0-9]{32}\b|\b[a-fA-F0-9]{40}\b|\b[a-fA-F0-9]{64}\b/g;
-const DOMAIN_CANDIDATE = /\b(?=.{1,253}\b)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+(?:[a-zA-Z]{2,63})\b/g;
+const DOMAIN_CANDIDATE = /\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.|\[\.\]|\(\.\)))+(?:[a-zA-Z]{2,63})\b/g;
 
 const DOMAIN_EXCLUSIONS = new Set(['microsoft.com', 'example.com', 'localhost']);
 const DOMAIN_TLD_EXCLUSIONS = new Set(['local', 'internal', 'exe', 'dll', 'bin', 'tmp', 'log', 'conf', 'ps1', 'bat', 'sh', 'js']);
@@ -67,13 +67,29 @@ function isValidSubnet(value) {
   return Number.isInteger(p) && p >= 0 && p <= 32;
 }
 
+function refangDots(value) {
+  return value.replace(/\[\.\]|\(\.\)/g, '.');
+}
+
+function trimUrlPunctuation(value) {
+  let trimmed = value.replace(/[,.;]+$/g, '');
+  while (trimmed.endsWith(')') && (trimmed.match(/\)/g) || []).length > (trimmed.match(/\(/g) || []).length) {
+    trimmed = trimmed.slice(0, -1).replace(/[,.;]+$/g, '');
+  }
+  return trimmed;
+}
+
 function normalizeIoc(raw, type) {
   const value = String(raw || '').trim();
   switch (type) {
     case IOC_TYPES.URL:
-      return value.replace(/[),.;]+$/g, '');
+      // Refang only the scheme and authority, never path/query/fragment text.
+      return trimUrlPunctuation(value).replace(/^(https?|hxxps?)(?::|\[:\])\/\/((?:[^/?#@]*@)?)([^/?#:]+)(:\d+)?/i,
+        (_, scheme, userInfo, host, port = '') => `${scheme.toLowerCase().replace('xx', 'tt')}://${userInfo}${refangDots(host)}${port}`);
     case IOC_TYPES.DOMAIN:
-      return value.toLowerCase().replace(/^\.+|\.+$/g, '');
+      return refangDots(value).toLowerCase().replace(/^\.+|\.+$/g, '');
+    case IOC_TYPES.IP:
+      return refangDots(value);
     case IOC_TYPES.MD5:
     case IOC_TYPES.SHA1:
     case IOC_TYPES.SHA256:
@@ -94,6 +110,8 @@ function detectHashType(value) {
 }
 
 function pushUnique(results, item) {
+  // Higher-precedence candidates are collected first on original source offsets.
+  if (results.some((entry) => item.index < entry.index + entry.length && entry.index < item.index + item.length)) return;
   if (!results.some((entry) => entry.type === item.type && entry.normalized === item.normalized && entry.index === item.index)) {
     results.push(item);
   }
@@ -162,7 +180,7 @@ function parseIocsFromText(text, options = {}) {
   const mode = resolveDetectionMode(options.mode);
 
   for (const match of text.matchAll(URL_CANDIDATE)) {
-    const raw = match[0];
+    const raw = trimUrlPunctuation(match[0]);
     const normalized = normalizeIoc(raw, IOC_TYPES.URL);
     pushUnique(results, { type: IOC_TYPES.URL, raw, normalized, index: match.index ?? 0, length: raw.length, confidence: scoreDetectionConfidence(IOC_TYPES.URL, normalized) });
   }
@@ -176,7 +194,7 @@ function parseIocsFromText(text, options = {}) {
 
   for (const match of text.matchAll(IPV4_CANDIDATE)) {
     const raw = match[0];
-    if (!isValidIpv4(raw)) continue;
+    if (!isValidIpv4(normalizeIoc(raw, IOC_TYPES.IP))) continue;
     const insideSubnet = results.some((entry) => entry.type === IOC_TYPES.SUBNET && (match.index ?? 0) >= entry.index && (match.index ?? 0) < entry.index + entry.length);
     if (insideSubnet) continue;
     const normalized = normalizeIoc(raw, IOC_TYPES.IP);
@@ -202,7 +220,7 @@ function parseIocsFromText(text, options = {}) {
     const normalized = normalizeIoc(raw, IOC_TYPES.DOMAIN);
     const insideUrl = results.some((entry) => entry.type === IOC_TYPES.URL && (match.index ?? 0) >= entry.index && (match.index ?? 0) < entry.index + entry.length);
     if (insideUrl) continue;
-    if (isLikelyExcludedDomain(normalized, text, match.index ?? 0, { mode })) continue;
+    if (normalized.length > 253 || isLikelyExcludedDomain(raw, text, match.index ?? 0, { mode })) continue;
     pushUnique(results, { type: IOC_TYPES.DOMAIN, raw, normalized, index: match.index ?? 0, length: raw.length, confidence: scoreDetectionConfidence(IOC_TYPES.DOMAIN, normalized) });
   }
 

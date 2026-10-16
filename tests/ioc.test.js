@@ -8,6 +8,38 @@ test('normalizeIoc trims URL punctuation and lowercases domains/hashes', () => {
   assert.equal(normalizeIoc('ABCDEF0123456789ABCDEF0123456789', IOC_TYPES.MD5), 'abcdef0123456789abcdef0123456789');
 });
 
+test('defanged separators preserve original ranges and URL precedence', () => {
+  for (const scheme of ['http', 'https', 'hxxp', 'HXXPS']) {
+    for (const colon of [':', '[:]']) {
+      for (const dot of ['.', '[.]', '(.)']) {
+        for (const host of [`evil${dot}test`, `8${dot}8${dot}8${dot}8`]) {
+          const raw = `${scheme}${colon}//${host}/a[.]b?q=(.)`;
+          const text = `Before (${raw}); after evil[.]test and 8[.]8(.)8[.]8.`;
+          const results = parseIocsFromText(text);
+          assert.deepEqual(results.map((r) => r.type), ['url', 'domain', 'ip']);
+          assert.equal(results[0].raw, raw);
+          assert.equal(results[0].normalized, `${scheme.toLowerCase().replace('xx', 'tt')}://${host.replace(/\[\.\]|\(\.\)/g, '.')}/a[.]b?q=(.)`);
+          for (const result of results) {
+            assert.equal(text.slice(result.index, result.index + result.length), result.raw);
+            assert.equal(result.index, result.type === 'url' ? text.indexOf(raw) : text.lastIndexOf(result.raw));
+          }
+          assert.equal(detectSingleIoc(raw).normalized, results[0].normalized);
+        }
+      }
+    }
+  }
+});
+
+test('defanged domains retain exclusions and IP validation in both detection modes', () => {
+  for (const mode of ['balanced', 'strict']) {
+    const results = parseIocsFromText('evil[.]test evil(.)test 8[.]8(.)8[.]8 999[.]8[.]8[.]8 microsoft[.]com malware(.)exe printer[.]local admin@evil[.]org', { mode });
+    assert.deepEqual(results.map((r) => r.normalized), ['evil.test', 'evil.test', '8.8.8.8']);
+  }
+  assert.equal(parseIocsFromText('google[.]com', { mode: 'strict' }).length, 0);
+  assert.equal(parseIocsFromText('import from cdn[.]test', { mode: 'strict' }).length, 0);
+  assert.equal(normalizeIoc('HXXPS[:]//evil[.]test/a[.]b?q=(.)', 'url'), 'https://evil.test/a[.]b?q=(.)');
+});
+
 test('IPv4 and subnet validation reject invalid values', () => {
   assert.equal(isValidIpv4('1.2.3.4'), true);
   assert.equal(isValidIpv4('999.2.3.4'), false);

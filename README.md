@@ -93,6 +93,12 @@ The fixed default is **7 days**; edit it after pasting if needed. Network indica
 
 Only whole inputs recognized by the current parser are supported; surrounding text, multiple IOC, ASN, subnet, IPv6 and email inputs are rejected. This is not a generic Sentinel/DNS template or a Splunk/Elastic connector. No query execution or real-tenant validation is provided. Clipboard contents may be accessible to other applications; check where you paste them. See [privacy details](docs/PRIVACY_TRANSPARENCY.md#defender-query-clipboard).
 
+## Defanged indicators
+
+Detection and manual investigation recognize `hxxp`/`hxxps`, `[:]` in place of the scheme colon, and `[.]` or `(.)` in domain/IPv4 hosts, including mixed separators. For example, `HXXPS[:]//evil(.)test/a` is investigated as `https://evil.test/a`; `8[.]8(.)8[.]8` becomes `8.8.8.8`. Existing domain exclusions and IPv4 protections still apply.
+
+The page keeps its original text: highlights are not links, scanning does not contact the target or providers, and nested host indicators are not counted twice. Only the investigation representation is refanged; path/query text is not rewritten. IPv6, email, defanged CIDR, other obfuscations, and indicators split across text nodes are not supported by this addition. See [privacy details](docs/PRIVACY_TRANSPARENCY.md#defanged-investigation-values).
+
 ## Setting up providers
 
 Mustela detects and highlights IOC out of the box — no API keys required.
