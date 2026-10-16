@@ -48,6 +48,25 @@ npm run verify          # build + npm test + xvfb e2e
 
 PRs are expected to pass `npm test`. E2E coverage is encouraged for changes that affect the end-to-end analyst flow.
 
+### Generated IOC runtime
+
+`npm test` regenerates the expected IOC runtime in memory and compares its exact bytes
+with both `src/shared/ioc.content-runtime.js` in the working tree and its Git index blob.
+It never repairs files or changes the index. Git and a staged runtime are required;
+missing files or an unavailable index fail explicitly. Checking the index prevents a
+preceding build from hiding a stale runtime in a commit (including in CI).
+
+After editing `src/shared/ioc.js`, regenerate and stage both files before validating:
+
+```bash
+npm run build
+git add src/shared/ioc.js src/shared/ioc.content-runtime.js
+npm test
+```
+
+Commit both files together. Running build alone only repairs the working tree, not
+the index, so the freshness check will still fail until the correct runtime is staged.
+
 ## Code style
 
 There is no linter today. Match the existing style:
