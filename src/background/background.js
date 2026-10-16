@@ -1,4 +1,4 @@
-import { buildThreatSummary, detectSingleIoc, summarizeProviderVerdict } from '../shared/ioc.js';
+import { buildThreatSummary, detectSingleIoc, isProtectedIoc, PUBLIC_LOOKUP_BLOCK_REASON, PROTECTED_IPV4_EXPLANATION, summarizeProviderVerdict } from '../shared/ioc.js';
 import { generateCorrelationAnalysis, generateInvestigationSummary, validateOpenAiCompatibleConfig } from '../integrations/assistants.js';
 import { addIocToMisp, isProviderSupportedForIoc, PROVIDERS } from '../providers/providers.js';
 import { addHistory, clearCache, clearDisabledPages, clearHistory, getCachedResult, getDetectedForTab, getHistory, getHistoryEntry, getSettings, isPageDisabled, saveDetectedForTab, saveHistoryNote, saveSettings, setCachedResult, setPageDisabled, toggleHistoryPin } from '../storage/storage.js';
@@ -62,9 +62,24 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   ensureContentScripts(tabId);
 });
 
+async function openInvestigationPanel(ioc, tab) {
+  if (!tab?.id) return;
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'OPEN_INVESTIGATION_PANEL', payload: ioc });
+  } catch (error) {
+    console.debug('Unable to open in-page investigation panel', error);
+  }
+}
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const detected = detectSingleIoc(info.selectionText || '');
   if (!detected) return;
+
+  if (isProtectedIoc(detected) && ['open-virustotal', 'open-abuseipdb', 'open-shodan'].includes(info.menuItemId)) {
+    // Explain the blocked pivot in the panel instead of silently doing nothing.
+    await openInvestigationPanel(detected, tab);
+    return;
+  }
 
   if (info.menuItemId === 'open-virustotal') {
     const url = PROVIDERS.virustotal.buildExternalUrl?.(detected);
@@ -82,13 +97,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
   if (info.menuItemId !== 'investigate-selection') return;
-
-  if (!tab?.id) return;
-  try {
-    await chrome.tabs.sendMessage(tab.id, { type: 'OPEN_INVESTIGATION_PANEL', payload: detected });
-  } catch (error) {
-    console.debug('Unable to open in-page investigation panel', error);
-  }
+  await openInvestigationPanel(detected, tab);
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -130,7 +139,10 @@ async function handleMessage(message, sender) {
       const provider = PROVIDERS[message.payload?.provider];
       const ioc = message.payload?.ioc;
       if (!provider || !ioc || !provider.buildExternalUrl) return { ok: false, error: 'Unsupported provider' };
+      if (provider.external !== false && isProtectedIoc(ioc)) return { ok: false, error: PUBLIC_LOOKUP_BLOCK_REASON };
+      if (!isProviderSupportedForIoc(provider.id, ioc)) return { ok: false, error: 'Unsupported IOC for provider' };
       const url = provider.buildExternalUrl(ioc);
+      if (!url) return { ok: false, error: 'External lookup unavailable' };
       await chrome.tabs.create({ url });
       return { ok: true, data: { url } };
     }
@@ -174,7 +186,7 @@ async function handleMessage(message, sender) {
       }
       const history = await getHistory();
       const entries = selectCorrelationEntries(history);
-      if (entries.length < 2) return { ok: false, error: 'Not enough investigation history for correlation.' };
+      if (entries.length < 2) return { ok: false, error: 'Not enough eligible investigation history for correlation: internal/reserved IPv4 entries are excluded; at least two eligible entries are required.' };
       const { pageUrl = '', pageTitle = '' } = message?.payload || {};
       const result = await generateCorrelationAnalysis(entries, llm, { pageUrl, pageTitle });
       return { ok: true, data: result };
@@ -255,7 +267,7 @@ function selectCorrelationEntries(history) {
       default: return 0;
     }
   };
-  return [...all]
+  return all.filter((entry) => !isProtectedIoc(entry.ioc || entry))
     .sort((a, b) => {
       const tDiff = threatPriority(b) - threatPriority(a);
       if (tDiff !== 0) return tDiff;
@@ -313,6 +325,7 @@ function buildProviderCacheProfile(settings = {}) {
 }
 
 async function maybeAttachLlmSummary(settings, investigation) {
+  if (isProtectedIoc(investigation.ioc)) return investigation;
   const llm = settings?.analystAssist || {};
   if (!llm.enabled || !llm.baseUrl || !llm.apiKey || !llm.model) return investigation;
 
@@ -335,10 +348,12 @@ async function maybeAttachLlmSummary(settings, investigation) {
 }
 
 async function lookupIoc(ioc, sender = {}) {
+  const protectedIpv4 = isProtectedIoc(ioc);
   const settings = await getSettings();
   const providerFingerprint = btoa(buildProviderCacheProfile(settings));
   const cacheKey = `${ioc.type}:${ioc.normalized}:${providerFingerprint}`;
-  const cached = ioc?._rerun ? null : await getCachedResult(cacheKey, settings.cacheTtlMinutes || 30);
+  // Never reuse legacy public results, links or AI briefs for protected IPv4.
+  const cached = protectedIpv4 || ioc?._rerun ? null : await getCachedResult(cacheKey, settings.cacheTtlMinutes || 30);
   if (cached) {
     const cachedInvestigation = {
       ...cached,
@@ -352,6 +367,10 @@ async function lookupIoc(ioc, sender = {}) {
 
   const results = [];
   for (const [providerId, provider] of Object.entries(PROVIDERS)) {
+    if (protectedIpv4 && provider.external !== false) {
+      results.push({ provider: provider.name, success: false, blocked: true, summary: PUBLIC_LOOKUP_BLOCK_REASON });
+      continue;
+    }
     const providerSettings = settings.providers?.[providerId];
     if (!providerSettings?.enabled) continue;
     if (!provider.supportedTypes.includes(ioc.type)) continue;
@@ -381,6 +400,10 @@ async function lookupIoc(ioc, sender = {}) {
 
   const orderedResults = sortProviderResults(results);
   const summary = summarizeProviderVerdict(orderedResults);
+  if (protectedIpv4) {
+    summary.explanation = PROTECTED_IPV4_EXPLANATION;
+    summary.threatSummary.narrative = `${PROTECTED_IPV4_EXPLANATION} ${summary.threatSummary.narrative}`;
+  }
   const investigation = {
     ioc,
     providerResults: orderedResults,

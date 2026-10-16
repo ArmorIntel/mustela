@@ -37,6 +37,29 @@ function isValidIpv4(value) {
   });
 }
 
+// Deliberately limited to these literal IPv4 ranges, not DNS, URLs or CIDRs.
+function classifyIpv4(value) {
+  if (typeof value !== 'string' || !isValidIpv4(value)) return null;
+  const [a, b, c] = value.split('.').map(Number);
+  const protectedRange = a === 10 || a === 127
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+    || (a === 169 && b === 254)
+    || (a === 100 && b >= 64 && b <= 127)
+    || (a >= 224 && a <= 239)
+    || (a === 192 && b === 0 && c === 2)
+    || (a === 198 && b === 51 && c === 100)
+    || (a === 203 && b === 0 && c === 113);
+  return protectedRange ? 'internal-reserved' : 'public';
+}
+
+function isProtectedIoc(ioc) {
+  return ioc?.type === IOC_TYPES.IP && classifyIpv4(ioc.normalized) === 'internal-reserved';
+}
+
+const PUBLIC_LOOKUP_BLOCK_REASON = 'Public lookups blocked for internal/reserved IPv4';
+const PROTECTED_IPV4_EXPLANATION = `${PUBLIC_LOOKUP_BLOCK_REASON}. Analyst Assist summaries and correlation are also blocked, even with a local endpoint. Configured MISP lookups and explicit Add to MISP remain available: the IOC leaves the browser for MISP. Blocking is not a clean verdict.`;
+
 function isValidSubnet(value) {
   const [ip, prefix] = String(value).split('/');
   if (!isValidIpv4(ip)) return false;
@@ -392,6 +415,10 @@ function summarizeProviderVerdict(results) {
   globalThis.MUSTELA_SHARED = {
     IOC_TYPES,
     isValidIpv4,
+    classifyIpv4,
+    isProtectedIoc,
+    PUBLIC_LOOKUP_BLOCK_REASON,
+    PROTECTED_IPV4_EXPLANATION,
     isValidSubnet,
     normalizeIoc,
     detectHashType,

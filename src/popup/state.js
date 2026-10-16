@@ -1,5 +1,5 @@
 import { isProviderSupportedForIoc } from '../providers/providers.js';
-import { detectSingleIoc } from '../shared/ioc.js';
+import { detectSingleIoc, isProtectedIoc, PROTECTED_IPV4_EXPLANATION } from '../shared/ioc.js';
 
 export function buildIocKey(ioc) {
   const type = String(ioc?.type || '').trim().toLowerCase();
@@ -57,8 +57,8 @@ export function getManualLookupState(input) {
     return {
       raw,
       ioc,
-      chip: String(ioc.type || 'TYPE').toUpperCase(),
-      hint: `IOC recognized: ${String(ioc.type || 'ioc').toUpperCase()}. Press Enter or use Investigate.`,
+      chip: isProtectedIoc(ioc) ? 'Internal / reserved' : String(ioc.type || 'TYPE').toUpperCase(),
+      hint: isProtectedIoc(ioc) ? PROTECTED_IPV4_EXPLANATION : `IOC recognized: ${String(ioc.type || 'ioc').toUpperCase()}. Press Enter or use Investigate.`,
       pivots: {
         virustotal: isProviderSupportedForIoc('virustotal', ioc),
         abuseipdb: isProviderSupportedForIoc('abuseipdb', ioc),
