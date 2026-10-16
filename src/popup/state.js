@@ -23,8 +23,12 @@ export function createPauseController(send, render) {
       if (request === revision) update({ error: error.message || String(error) });
     }
   }
-  return {
+  const controller = {
     refresh,
+    retry() {
+      if (!state.error || writing) return;
+      return controller.toggle();
+    },
     async toggle() {
       if (writing) return;
       if (state.paused === null) return refresh();
@@ -43,6 +47,7 @@ export function createPauseController(send, render) {
       }
     }
   };
+  return controller;
 }
 
 export function buildIocKey(ioc) {

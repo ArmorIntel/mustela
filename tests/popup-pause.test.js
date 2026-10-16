@@ -23,12 +23,29 @@ test('popup shows only confirmed state, keeps failed OFF retryable and reconcile
   assert.equal(view.pending, false);
   assert.match(view.error, /retry/);
   fail = false;
-  await controller.toggle();
+  await controller.retry();
   assert.equal(view.paused, true);
   assert.equal(view.error, '');
   paused = false;
   await controller.refresh();
   assert.equal(view.paused, false);
+});
+
+test('retry is inert without an error, including after confirmed OFF', async () => {
+  let paused = false;
+  let writes = 0;
+  const controller = createPauseController(async (type, payload) => {
+    if (type === 'SET_PAUSE_STATE') { writes++; paused = payload.paused; }
+    return ok(paused);
+  }, () => {});
+  await controller.refresh();
+  await controller.retry();
+  assert.equal(writes, 0);
+  await controller.toggle();
+  assert.equal(paused, true);
+  await controller.retry();
+  assert.equal(writes, 1);
+  assert.equal(paused, true);
 });
 
 test('stale popup reads cannot overwrite newer confirmations; failed reads stay unknown and retryable', async () => {

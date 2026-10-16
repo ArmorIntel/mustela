@@ -14,6 +14,61 @@ async function expectClear(page) {
   await expect(page.locator('.mustela-highlight, .mustela-page-indicator, .mustela-panel')).toHaveCount(0);
 }
 
+async function expectTextButtonFits(button) {
+  expect(await button.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    const text = document.createRange();
+    text.selectNodeContents(element);
+    const label = text.getBoundingClientRect();
+    return element.scrollWidth <= element.clientWidth && element.scrollHeight <= element.clientHeight
+      && label.left >= bounds.left && label.right <= bounds.right
+      && label.top >= bounds.top && label.bottom <= bounds.bottom
+      && bounds.left >= 0 && bounds.right <= 340;
+  })).toBe(true);
+}
+
+async function expectRetryAbsent(popup) {
+  await expect(popup.locator('#pauseRetryBtn')).toBeHidden();
+  await control(popup).focus();
+  // Current-page controls may appear between global activation and manual lookup.
+  let steps = 0;
+  do {
+    await popup.keyboard.press('Tab');
+    await expect(popup.locator('#pauseRetryBtn')).not.toBeFocused();
+    steps++;
+  } while (!(await popup.locator('#manualInput').evaluate((element) => element === document.activeElement)) && steps < 10);
+  await expect(popup.locator('#manualInput')).toBeFocused();
+  for (let index = 0; index < steps; index++) {
+    await popup.keyboard.press('Shift+Tab');
+    await expect(popup.locator('#pauseRetryBtn')).not.toBeFocused();
+  }
+  await expect(control(popup)).toBeFocused();
+}
+
+test('global pause text controls fit the popup and retry cannot resume confirmed OFF', async () => {
+  const extension = await launchExtensionContext();
+  try {
+    const popup = await openPopup(extension.context, extension.extensionId);
+    await popup.setViewportSize({ width: 340, height: 800 });
+    await expect(control(popup)).toBeEnabled();
+    await expectRetryAbsent(popup);
+    await expectTextButtonFits(control(popup));
+    expect(await control(popup).evaluate((element) => {
+      const style = getComputedStyle(element);
+      return element.matches(':focus-visible') && style.outlineStyle !== 'none' && style.outlineWidth !== '0px';
+    })).toBe(true);
+    await control(popup).press('Space');
+    await expect(control(popup)).toHaveText('Mustela OFF — resume');
+    await expect(control(popup)).toBeEnabled();
+    await expectTextButtonFits(control(popup));
+    await expectRetryAbsent(popup);
+    // Even a programmatic click must not turn a hidden retry into a resume action.
+    await popup.locator('#pauseRetryBtn').evaluate((element) => element.click());
+    expect((await send(popup, 'GET_PAUSE_STATE')).data.paused).toBe(true);
+    await expect(control(popup)).toHaveText('Mustela OFF — resume');
+  } finally { await extension.close(); }
+});
+
 test('persisted OFF remains effective after a browser and service-worker restart', async () => {
   const server = await startFixtureServer();
   const extension = await launchExtensionContext();
@@ -148,11 +203,21 @@ test('resume preserves URL exclusions and disabled highlighting; failed popup wr
     });
     await control(popup).click();
     await expect(popup.locator('#pauseStatus')).toContainText('retry');
+    await popup.setViewportSize({ width: 340, height: 800 });
+    const retry = popup.getByRole('button', { name: 'Retry global change' });
+    await expect(retry).toBeVisible();
+    await expectTextButtonFits(control(popup));
+    await expectTextButtonFits(retry);
+    await control(popup).focus();
+    await popup.keyboard.press('Tab');
+    await expect(retry).toBeFocused();
     await expect(control(popup)).toHaveAttribute('aria-pressed', 'true');
     await expect(marks(first).first()).toBeVisible();
     await worker.evaluate(() => { chrome.storage.local.set = originalStorageSet; });
     await popup.getByRole('button', { name: 'Retry global change' }).click();
     await expect(control(popup)).toHaveAttribute('aria-pressed', 'false');
+    await expectRetryAbsent(popup);
+    await expectTextButtonFits(control(popup));
     await control(popup).click();
     await expect(marks(first).first()).toBeVisible();
     await expectClear(excluded);

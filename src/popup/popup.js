@@ -647,10 +647,10 @@ function mountGlobalPause() {
     button.setAttribute('aria-pressed', String(paused === false));
     status.textContent = error || (pending ? 'Saving…' : paused === null ? 'Unable to confirm global state.' : paused ? 'OFF confirmed on all pages.' : 'ON — existing page preferences apply.');
     retry.hidden = !error;
-    retry.disabled = pending;
+    retry.disabled = pending || !error;
   });
   button.addEventListener('click', () => controller.toggle());
-  retry.addEventListener('click', () => controller.toggle());
+  retry.addEventListener('click', () => controller.retry());
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === 'PAUSE_STATE_UPDATED') controller.refresh();
   });
