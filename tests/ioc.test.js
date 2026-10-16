@@ -25,6 +25,30 @@ test('email detection preserves local case, exact ranges and excludes nested ide
   }
 });
 
+for (const mode of ['balanced', 'strict']) {
+  test(`unsupported quoted email tokens reserve escaped quotes in ${mode} mode`, () => {
+    const addresses = [
+      String.raw`"foo.test\" bar"@evil.test`,
+      String.raw`"foo.test\\\" bar"@evil.test`,
+      String.raw`"foo.test\\"@evil.test`,
+      String.raw`"foo.test\" AS123 8.8.8.8"@evil.test`
+    ];
+    for (const address of addresses) {
+      assert.deepEqual(parseIocsFromText(address, { mode }), [], address);
+      const text = `${address} standalone.test analyst+tag@EVIL.TEST`;
+      const results = parseIocsFromText(text, { mode });
+      assert.deepEqual(results.map(({ type, normalized }) => ({ type, normalized })), [
+        { type: 'domain', normalized: 'standalone.test' },
+        { type: 'email', normalized: 'analyst+tag@evil.test' }
+      ], address);
+      for (const result of results) {
+        assert.equal(result.index, text.indexOf(result.raw));
+        assert.equal(text.slice(result.index, result.index + result.length), result.raw);
+      }
+    }
+  });
+}
+
 test('IPv6 uses the IP type, canonical values and exact original source ranges', () => {
   const cases = [
     ['2001:0DB8:0000:0000:0000:0000:0000:0001', '2001:db8::1'],

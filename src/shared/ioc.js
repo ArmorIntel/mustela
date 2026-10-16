@@ -211,7 +211,9 @@ export function parseIocsFromText(text, options = {}) {
 
   // Reserve whole address-like tokens, including invalid or unsupported ones.
   // Never promote their local identifiers or domain suffixes independently.
-  const emailTokens = [...text.matchAll(/"[^"\r\n]*"@[^\s<>,;:]*|(?:\(\.\)|[^\s<>(),;:])+/g)]
+  // Consume escaped characters together so an escaped quote cannot end the
+  // unsupported quoted local part and expose nested provider-compatible IOCs.
+  const emailTokens = [...text.matchAll(/"(?:\\[^\r\n]|[^"\\\r\n])*"@[^\s<>,;:]*|(?:\(\.\)|[^\s<>(),;:])+/g)]
     .filter(([raw]) => raw.includes('@'));
   const emails = [];
   for (const token of emailTokens) {
