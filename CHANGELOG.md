@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- Complete dark landing page with local assets, narrative ASCII scenes, interruptible offline investigation guidance, eligible fictional providers, session notes and real JSON export. Animations respect pause, visibility and reduced motion; HTTP regression tests cover desktop, tablet and touch layouts.
 - Manual Chrome Web Store validation checklist and blank candidate report, with exact-ZIP identification, privacy checks, and maintainer-owned submission/publication decisions.
 - Root `AGENTS.md` entry point for AI-assisted contributions, covering product context, privacy guardrails, code navigation, validation, and maintainer-owned publication.
 

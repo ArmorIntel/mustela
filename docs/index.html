@@ -1,818 +1,123 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mustela — In-page IOC investigation for SOC &amp; CTI analysts</title>
-<meta name="description" content="Mustela is a privacy-first Chrome extension that detects, highlights and investigates indicators of compromise (IOC) directly on the page. Aggregated verdicts from VirusTotal, AbuseIPDB and Shodan, plus optional AI analysis. No backend, no telemetry.">
-<meta name="theme-color" content="#070d18">
-<link rel="icon" type="image/png" href="icon128.png">
-
-<!-- Open Graph -->
-<meta property="og:type" content="website">
-<meta property="og:title" content="Mustela — Investigate IOCs without leaving the page">
-<meta property="og:description" content="Detect, highlight and investigate IOCs in context. Aggregated VirusTotal / AbuseIPDB / Shodan verdicts and optional AI analysis. Privacy-first, no backend.">
-<meta property="og:image" content="icon128.png">
-
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-
-<style>
-  :root {
-    /* Surfaces */
-    --bg-0: #060b14;
-    --bg-1: #0a1120;
-    --bg-2: #0d1626;
-
-    /* Glass */
-    --glass-1: rgba(255, 255, 255, 0.055);
-    --glass-2: rgba(255, 255, 255, 0.085);
-    --glass-3: rgba(255, 255, 255, 0.12);
-    --line: rgba(255, 255, 255, 0.10);
-    --line-strong: rgba(255, 255, 255, 0.16);
-    --hi: rgba(255, 255, 255, 0.14); /* inner top highlight */
-
-    /* Text */
-    --text: #eef3fc;
-    --muted: rgba(206, 217, 238, 0.72);
-    --muted-2: rgba(176, 190, 217, 0.58);
-
-    /* Accents */
-    --cyan: #7dd3fc;
-    --cyan-strong: #38bdf8;
-    --blue: #4f7cff;
-    --indigo: #a78bfa;     /* reserved for AI */
-    --indigo-strong: #8b5cf6;
-
-    /* Status (functional only — not theme) */
-    --mal: #fb7185;
-    --warn: #fbbf24;
-    --ok: #34d399;
-
-    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-
-    --maxw: 1120px;
-    --radius: 22px;
-    --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
-  ::selection { background: rgba(125, 211, 252, 0.28); color: #fff; }
-
-  body {
-    color: var(--text);
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-    font-size: 17px;
-    line-height: 1.65;
-    letter-spacing: -0.005em;
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
-    background: var(--bg-0);
-    overflow-x: hidden;
-  }
-
-  /* Ambient background glows */
-  .aurora {
-    position: fixed; inset: 0; z-index: -1; pointer-events: none;
-    background:
-      radial-gradient(60vw 60vw at 18% -8%, rgba(79, 124, 255, 0.16), transparent 60%),
-      radial-gradient(50vw 50vw at 92% 2%, rgba(125, 211, 252, 0.13), transparent 55%),
-      radial-gradient(55vw 45vw at 50% 108%, rgba(139, 92, 246, 0.10), transparent 60%),
-      linear-gradient(165deg, var(--bg-0) 0%, var(--bg-1) 45%, var(--bg-0) 100%);
-  }
-  .grid-overlay {
-    position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0.5;
-    background-image:
-      linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
-    background-size: 56px 56px;
-    -webkit-mask-image: radial-gradient(80% 60% at 50% 0%, #000 0%, transparent 75%);
-            mask-image: radial-gradient(80% 60% at 50% 0%, #000 0%, transparent 75%);
-  }
-
-  a { color: var(--cyan); text-decoration: none; }
-  .container { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
-  .mono { font-family: var(--mono); }
-
-  code {
-    font-family: var(--mono);
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid var(--line);
-    padding: 1px 7px; border-radius: 7px;
-    font-size: 0.84em; color: #dbe7ff;
-  }
-
-  svg { display: block; }
-  .ico { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.7; fill: none;
-         stroke-linecap: round; stroke-linejoin: round; }
-
-  /* ============ NAV ============ */
-  .nav-wrap { position: sticky; top: 0; z-index: 50; padding: 14px 0; }
-  nav {
-    max-width: var(--maxw); margin: 0 auto;
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 18px;
-    padding: 10px 14px 10px 18px;
-    background: rgba(10, 17, 32, 0.6);
-    border: 1px solid var(--line);
-    border-radius: 16px;
-    backdrop-filter: blur(18px) saturate(160%);
-    -webkit-backdrop-filter: blur(18px) saturate(160%);
-    box-shadow: inset 0 1px 0 var(--hi), 0 10px 36px rgba(0, 0, 0, 0.34);
-  }
-  .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 1.05rem; color: var(--text); letter-spacing: -0.02em; }
-  .brand .logo {
-    width: 34px; height: 34px; border-radius: 10px;
-    box-shadow: 0 4px 14px rgba(0,0,0,.45);
-  }
-  .nav-links { display: flex; align-items: center; gap: 4px; }
-  .nav-links a { color: var(--muted); font-size: 0.9rem; font-weight: 500; padding: 8px 12px; border-radius: 9px; transition: color 0.2s, background 0.2s; }
-  .nav-links a:hover { color: var(--text); background: var(--glass-1); }
-  .nav-cta { margin-left: 6px; }
-
-  /* ============ BUTTONS ============ */
-  .btn {
-    display: inline-flex; align-items: center; gap: 9px;
-    padding: 12px 22px; border-radius: 12px;
-    font-weight: 600; font-size: 0.94rem; letter-spacing: -0.01em;
-    cursor: pointer; border: 1px solid transparent;
-    transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), background 0.2s, border-color 0.2s, color 0.2s;
-    white-space: nowrap;
-  }
-  .btn .ico { width: 18px; height: 18px; }
-  .btn-sm { padding: 9px 16px; font-size: 0.88rem; border-radius: 10px; }
-  .btn-primary {
-    color: #04111f;
-    background: linear-gradient(180deg, #9fe0ff, var(--cyan-strong));
-    box-shadow: 0 8px 24px rgba(56, 189, 248, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.55);
-  }
-  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(56, 189, 248, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.6); }
-  .btn-ghost {
-    color: var(--text);
-    background: var(--glass-2);
-    border-color: var(--line-strong);
-    box-shadow: inset 0 1px 0 var(--hi);
-  }
-  .btn-ghost:hover { transform: translateY(-2px); background: var(--glass-3); border-color: rgba(255, 255, 255, 0.24); }
-
-  /* ============ HERO ============ */
-  .hero { padding: 70px 0 40px; }
-  .hero-grid { display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: center; }
-
-  .pill {
-    display: inline-flex; align-items: center; gap: 8px;
-    font-size: 0.78rem; font-weight: 500; color: var(--muted);
-    background: var(--glass-1); border: 1px solid var(--line);
-    border-radius: 999px; padding: 6px 14px 6px 10px; margin-bottom: 26px;
-  }
-  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); }
-  .pill .sep { color: var(--muted-2); }
-
-  .hero h1 {
-    font-size: clamp(2.3rem, 4.6vw, 3.5rem);
-    font-weight: 800; line-height: 1.06; letter-spacing: -0.035em;
-    margin-bottom: 20px;
-  }
-  .hero h1 .grad {
-    background: linear-gradient(110deg, var(--cyan) 10%, var(--blue) 55%, var(--indigo) 100%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .hero .lede { font-size: 1.12rem; color: var(--muted); max-width: 540px; margin-bottom: 16px; }
-  .hero .micro { font-size: 0.92rem; color: var(--muted-2); margin-bottom: 30px; }
-  .hero .micro strong { color: var(--text); font-weight: 600; }
-  .hero-cta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 26px; }
-
-  .sources { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted-2); }
-  .sources .lbl { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.68rem; }
-  .source-chip {
-    font-family: var(--mono); font-size: 0.74rem; font-weight: 500; color: var(--muted);
-    background: var(--glass-1); border: 1px solid var(--line);
-    padding: 4px 10px; border-radius: 8px;
-  }
-
-  /* ---- Hero demo (in-page mock) ---- */
-  .demo {
-    position: relative;
-    border-radius: var(--radius);
-    border: 1px solid var(--line-strong);
-    background: linear-gradient(180deg, var(--glass-2), var(--glass-1));
-    backdrop-filter: blur(16px) saturate(150%);
-    -webkit-backdrop-filter: blur(16px) saturate(150%);
-    box-shadow: inset 0 1px 0 var(--hi), 0 30px 70px rgba(0, 0, 0, 0.5);
-    overflow: hidden;
-  }
-  .demo-bar { display: flex; align-items: center; gap: 8px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
-  .demo-bar i { width: 11px; height: 11px; border-radius: 50%; background: rgba(255, 255, 255, 0.16); }
-  .demo-bar .tab { margin-left: 8px; font-family: var(--mono); font-size: 0.74rem; color: var(--muted-2); }
-  .demo-body { padding: 22px 22px 24px; }
-  .demo-meta { font-family: var(--mono); font-size: 0.72rem; color: var(--muted-2); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 14px; }
-  .demo-line { font-size: 0.94rem; color: var(--muted); margin-bottom: 11px; }
-
-  .ioc {
-    position: relative; font-family: var(--mono); font-size: 0.88em; color: #eaf2ff;
-    padding: 1px 5px; border-radius: 5px;
-    background: rgba(125, 211, 252, 0.14);
-    box-shadow: inset 0 -2px 0 rgba(125, 211, 252, 0.55);
-    cursor: pointer;
-  }
-  .ioc.is-mal { background: rgba(251, 113, 133, 0.14); box-shadow: inset 0 -2px 0 rgba(251, 113, 133, 0.6); }
-
-  .verdict {
-    margin-top: 18px;
-    border: 1px solid var(--line-strong);
-    border-radius: 16px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
-    box-shadow: inset 0 1px 0 var(--hi), 0 16px 40px rgba(0, 0, 0, 0.4);
-    overflow: hidden;
-  }
-  .verdict-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; border-bottom: 1px solid var(--line); }
-  .verdict-head .ttl { font-family: var(--mono); font-size: 0.82rem; color: var(--text); }
-  .verdict-head .ttl b { color: var(--cyan); font-weight: 600; }
-  .badge-mal { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--mal); background: rgba(251, 113, 133, 0.14); border: 1px solid rgba(251, 113, 133, 0.4); padding: 3px 9px; border-radius: 7px; }
-  .verdict-rows { padding: 6px 16px 12px; }
-  .vrow { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 0.82rem; }
-  .vrow:last-child { border-bottom: 0; }
-  .vrow .src { color: var(--muted); }
-  .vrow .val { font-family: var(--mono); font-size: 0.78rem; }
-  .v-mal { color: var(--mal); } .v-warn { color: var(--warn); } .v-ok { color: var(--ok); }
-
-  .ai-row { display: flex; gap: 11px; align-items: flex-start; padding: 13px 16px; background: rgba(139, 92, 246, 0.10); border-top: 1px solid rgba(167, 139, 250, 0.28); }
-  .ai-row .spark { flex: none; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; color: #ede9ff; background: rgba(139, 92, 246, 0.32); border: 1px solid rgba(167, 139, 250, 0.5); }
-  .ai-row .spark .ico { width: 15px; height: 15px; }
-  .ai-row .txt { font-size: 0.8rem; color: #e4ddff; line-height: 1.5; }
-  .ai-row .txt b { color: #fff; font-weight: 600; }
-  .ai-row .tag { display: block; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--indigo); margin-bottom: 3px; }
-
-  /* ============ SECTIONS ============ */
-  section { padding: 96px 0; }
-  .sec-head { max-width: 640px; margin-bottom: 52px; }
-  .sec-head.center { margin-left: auto; margin-right: auto; text-align: center; }
-  .kicker { display: inline-block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.18em; color: var(--cyan); margin-bottom: 14px; }
-  h2 { font-size: clamp(1.7rem, 3vw, 2.3rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; margin-bottom: 14px; }
-  .sec-head p { color: var(--muted); font-size: 1.05rem; }
-
-  /* Glass card base */
-  .glass {
-    background: linear-gradient(180deg, var(--glass-2), var(--glass-1));
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    backdrop-filter: blur(14px) saturate(140%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
-    box-shadow: inset 0 1px 0 var(--hi);
-  }
-
-  /* ---- Workflow (3 steps) ---- */
-  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-  .step { padding: 28px 26px 30px; position: relative; transition: transform 0.25s var(--ease), border-color 0.25s, background 0.25s; }
-  .step:hover { transform: translateY(-4px); border-color: var(--line-strong); }
-  .step .num { font-family: var(--mono); font-size: 0.78rem; color: var(--cyan); letter-spacing: 0.1em; }
-  .step .ic { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; margin: 16px 0 18px; color: var(--cyan); background: rgba(125, 211, 252, 0.12); border: 1px solid rgba(125, 211, 252, 0.26); }
-  .step h3 { font-size: 1.18rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 9px; }
-  .step p { color: var(--muted); font-size: 0.95rem; }
-  .step .arrow { position: absolute; top: 50%; right: -22px; transform: translateY(-50%); color: var(--muted-2); z-index: 2; }
-  .step:last-child .arrow { display: none; }
-
-  /* ---- Features grid ---- */
-  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-  .feature { padding: 26px 24px; transition: transform 0.25s var(--ease), border-color 0.25s, background 0.25s; }
-  .feature:hover { transform: translateY(-4px); border-color: var(--line-strong); background: linear-gradient(180deg, var(--glass-3), var(--glass-1)); }
-  .feature .ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 16px; color: var(--cyan); background: rgba(125, 211, 252, 0.1); border: 1px solid rgba(125, 211, 252, 0.22); }
-  .feature h3 { font-size: 1.06rem; font-weight: 700; letter-spacing: -0.015em; margin-bottom: 8px; }
-  .feature p { color: var(--muted); font-size: 0.92rem; }
-  .feature .types { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
-  .type-chip { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); background: var(--glass-1); border: 1px solid var(--line); padding: 3px 8px; border-radius: 6px; }
-
-  /* ---- AI section ---- */
-  .ai-sec { position: relative; }
-  .ai-sec .kicker { color: var(--indigo); }
-  .ai-sec .ai-glow {
-    position: absolute; inset: 0; z-index: -1; pointer-events: none;
-    background: radial-gradient(50vw 40vw at 70% 30%, rgba(139, 92, 246, 0.14), transparent 60%);
-  }
-  .ai-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: stretch; }
-  .ai-card { padding: 30px 28px; position: relative; overflow: hidden; }
-  .ai-card .ic { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; margin-bottom: 18px; color: #ece7ff; background: rgba(139, 92, 246, 0.22); border: 1px solid rgba(167, 139, 250, 0.42); }
-  .ai-card h3 { font-size: 1.2rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 10px; }
-  .ai-card p { color: var(--muted); font-size: 0.95rem; }
-  .ai-quote {
-    margin-top: 18px; padding: 14px 16px; border-radius: 13px;
-    background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(167, 139, 250, 0.24);
-    font-size: 0.86rem; color: #e6e0ff; line-height: 1.55;
-  }
-  .ai-quote .lbl { display: block; font-family: var(--mono); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--indigo); margin-bottom: 6px; }
-  .ai-byo { margin-top: 26px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
-  .ai-byo .lbl { font-size: 0.78rem; color: var(--muted-2); text-transform: uppercase; letter-spacing: 0.1em; }
-  .ai-byo .model { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); background: var(--glass-1); border: 1px solid var(--line); padding: 5px 12px; border-radius: 8px; }
-
-  /* ---- Privacy ---- */
-  .privacy-wrap { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 40px; align-items: center; }
-  .privacy-card { padding: 32px 30px; text-align: center; }
-  .privacy-card .shield { width: 60px; height: 60px; margin: 0 auto 18px; border-radius: 16px; display: grid; place-items: center; color: var(--cyan); background: rgba(125, 211, 252, 0.12); border: 1px solid rgba(125, 211, 252, 0.28); }
-  .privacy-card .big { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 6px; }
-  .privacy-card .sub { color: var(--muted); font-size: 0.92rem; }
-  .privacy-list { list-style: none; display: grid; gap: 12px; }
-  .privacy-list li { display: flex; gap: 13px; align-items: flex-start; color: var(--muted); font-size: 0.96rem; }
-  .privacy-list .check { flex: none; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; color: var(--ok); background: rgba(52, 211, 153, 0.13); border: 1px solid rgba(52, 211, 153, 0.3); margin-top: 1px; }
-  .privacy-list .check .ico { width: 14px; height: 14px; stroke-width: 2.4; }
-  .privacy-list b { color: var(--text); font-weight: 600; }
-
-  /* ---- Install ---- */
-  .install-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
-  .install-card { padding: 0; overflow: hidden; }
-  .install-card .ihead { display: flex; align-items: center; gap: 10px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
-  .install-card .ihead .tag { font-family: var(--mono); font-size: 0.7rem; color: var(--cyan); background: rgba(125, 211, 252, 0.1); border: 1px solid rgba(125, 211, 252, 0.24); padding: 3px 9px; border-radius: 7px; }
-  .install-card .ihead h3 { font-size: 1.02rem; font-weight: 700; letter-spacing: -0.015em; }
-  .install-card .ibody { padding: 22px; }
-
-  .codeblock { position: relative; background: rgba(2, 6, 14, 0.6); border: 1px solid var(--line); border-radius: 13px; padding: 16px 16px; margin-bottom: 16px; overflow-x: auto; }
-  .codeblock pre { font-family: var(--mono); font-size: 0.82rem; line-height: 1.85; color: #dbe7ff; }
-  .codeblock .cm { color: var(--muted-2); }
-  .codeblock .cy { color: var(--cyan); }
-  .copy-btn { position: absolute; top: 10px; right: 10px; display: inline-flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--muted); background: var(--glass-2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; cursor: pointer; transition: color 0.2s, border-color 0.2s, background 0.2s; }
-  .copy-btn:hover { color: var(--text); border-color: var(--line-strong); background: var(--glass-3); }
-  .copy-btn .ico { width: 13px; height: 13px; }
-
-  .ol { list-style: none; counter-reset: s; display: grid; gap: 14px; }
-  .ol li { position: relative; padding-left: 40px; color: var(--muted); font-size: 0.94rem; counter-increment: s; }
-  .ol li::before { content: counter(s); position: absolute; left: 0; top: -1px; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; font-family: var(--mono); font-size: 0.78rem; font-weight: 600; color: var(--cyan); background: rgba(125, 211, 252, 0.1); border: 1px solid rgba(125, 211, 252, 0.24); }
-  .ol li b { color: var(--text); font-weight: 600; }
-  .install-note { margin-top: 16px; font-size: 0.84rem; color: var(--muted-2); }
-
-  /* ---- Footer ---- */
-  footer { border-top: 1px solid var(--line); padding: 48px 0 56px; margin-top: 40px; }
-  .foot-grid { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
-  .foot-brand { display: flex; align-items: center; gap: 11px; }
-  .foot-brand .logo { width: 30px; height: 30px; border-radius: 9px; box-shadow: 0 3px 10px rgba(0,0,0,.4); }
-  .foot-brand .meta { font-size: 0.85rem; color: var(--muted-2); }
-  .foot-brand .meta strong { color: var(--text); font-weight: 600; display: block; font-size: 0.95rem; }
-  .foot-links { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .foot-links a { display: inline-flex; align-items: center; gap: 7px; font-size: 0.86rem; color: var(--muted); padding: 8px 13px; border-radius: 10px; border: 1px solid var(--line); background: var(--glass-1); transition: color 0.2s, border-color 0.2s, background 0.2s; }
-  .foot-links a:hover { color: var(--text); border-color: var(--line-strong); background: var(--glass-2); }
-  .foot-links a .ico { width: 16px; height: 16px; }
-  .foot-tag { margin-top: 26px; font-size: 0.82rem; color: var(--muted-2); }
-
-  /* ============ MOTION ============ */
-  .reveal { opacity: 0; transform: translateY(22px); transition: opacity 0.7s var(--ease), transform 0.7s var(--ease); }
-  .reveal.in { opacity: 1; transform: none; }
-
-  /* ============ RESPONSIVE ============ */
-  @media (max-width: 940px) {
-    .hero-grid { grid-template-columns: 1fr; gap: 40px; }
-    .demo { max-width: 560px; }
-    .steps { grid-template-columns: 1fr; }
-    .step .arrow { display: none !important; }
-    .features { grid-template-columns: repeat(2, 1fr); }
-    .ai-wrap { grid-template-columns: 1fr; }
-    .privacy-wrap { grid-template-columns: 1fr; gap: 28px; }
-    .install-wrap { grid-template-columns: 1fr; }
-  }
-  @media (max-width: 760px) {
-    .nav-links a:not(.nav-cta) { display: none; }
-  }
-  @media (max-width: 580px) {
-    body { font-size: 16px; }
-    section { padding: 72px 0; }
-    .features { grid-template-columns: 1fr; }
-    .hero-cta .btn { flex: 1 1 auto; justify-content: center; }
-    .foot-grid { flex-direction: column; align-items: flex-start; }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    html { scroll-behavior: auto; }
-    *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
-    .reveal { opacity: 1; transform: none; }
-  }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Mustela — In-page IOC investigation for SOC &amp; CTI analysts</title>
+  <meta name="description" content="Detect, highlight and investigate indicators of compromise in context. Local-first Chrome extension with configured intelligence providers and optional Analyst Assist.">
+  <meta name="theme-color" content="#080b11">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Mustela — Investigate IOCs without leaving the page">
+  <meta property="og:description" content="Detect, investigate and keep the trace. Configured intelligence providers, local notes and optional Analyst Assist.">
+  <meta property="og:image" content="assets/landing/icon128.png">
+  <link rel="icon" type="image/png" href="assets/landing/icon128.png">
+  <link rel="stylesheet" href="assets/landing/landing.css">
+  <link rel="stylesheet" href="assets/landing/demo.css">
 </head>
-<body>
-
-<div class="aurora" aria-hidden="true"></div>
-<div class="grid-overlay" aria-hidden="true"></div>
-
-<!-- ============ NAV ============ -->
-<div class="nav-wrap">
-  <nav class="container" aria-label="Primary">
-    <a class="brand" href="#top">
-      <img class="logo" src="icon128.png" alt="">
-      Mustela
-    </a>
-    <div class="nav-links">
-      <a href="#workflow">Workflow</a>
-      <a href="#features">Features</a>
-      <a href="#ai">AI Assist</a>
-      <a href="#privacy">Privacy</a>
-      <a class="btn btn-ghost btn-sm nav-cta" href="#install">Install</a>
-    </div>
-  </nav>
-</div>
-
-<!-- ============ HERO ============ -->
-<header class="hero" id="top">
-  <div class="container">
-    <div class="hero-grid">
+<body class="landing" id="top">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="#top"><img src="assets/landing/icon128.png" width="32" height="32" alt="">mustela</a>
+    <nav aria-label="Main">
+      <a href="#demo">Investigation flow</a><a href="#capabilities">Capabilities</a>
+      <a href="https://github.com/ArmorIntel/mustela">GitHub</a><a class="nav-install" href="#install">Install Mustela</a>
+    </nav>
+  </header>
+  <main id="main" tabindex="-1">
+    <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <span class="pill">
-          <span class="dot"></span>
-          Chrome · Manifest V3
-          <span class="sep">·</span> MIT
-          <span class="sep">·</span> Privacy-first
-        </span>
-        <h1>Investigate IOCs <span class="grad">without leaving the page.</span></h1>
-        <p class="lede">
-          Mustela highlights indicators of compromise — IPs, domains, URLs and hashes — directly in
-          any web page, and turns each one into a one-click investigation.
-        </p>
-        <p class="micro">
-          Aggregated verdicts from <strong>VirusTotal</strong>, <strong>AbuseIPDB</strong> and
-          <strong>Shodan</strong>, plus optional <strong>AI analysis</strong>. No backend. No telemetry.
-        </p>
-        <div class="hero-cta">
-          <a class="btn btn-primary" href="#install">
-            <svg class="ico" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M5 21h14"/></svg>
-            Install Mustela
-          </a>
-          <a class="btn btn-ghost" href="https://github.com/ArmorIntel/mustela">
-            <svg class="ico" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>
-            View source
-          </a>
-        </div>
-        <div class="sources">
-          <span class="lbl">Data sources</span>
-          <span class="source-chip">VirusTotal</span>
-          <span class="source-chip">AbuseIPDB</span>
-          <span class="source-chip">Shodan</span>
-          <span class="source-chip">+ your LLM</span>
-        </div>
+        <h1 id="hero-title">Investigate threats.<br><span>Stay in context.</span></h1>
+        <p class="lede">Detect and investigate indicators of compromise directly on the page. Built for SOC and CTI analysts.</p>
+        <div class="actions"><a class="button" href="#install">Install Mustela</a><a class="button secondary" href="#demo">Explore the investigation flow</a></div>
       </div>
-
-      <!-- In-page mock -->
-      <div class="demo reveal" aria-hidden="true">
-        <div class="demo-bar">
-          <i></i><i></i><i></i>
-          <span class="tab mono">siem · ticket-4821</span>
-        </div>
-        <div class="demo-body">
-          <div class="demo-meta">// SOC alert · outbound traffic</div>
-          <p class="demo-line">EDR flagged a connection to <span class="ioc is-mal">185.220.101.34</span> over port 443.</p>
-          <p class="demo-line">Beaconing pattern resolves to <span class="ioc">c2-panel.example.net</span>.</p>
-
-          <div class="verdict">
-            <div class="verdict-head">
-              <span class="ttl mono">IPv4 · <b>185.220.101.34</b></span>
-              <span class="badge-mal">Malicious</span>
-            </div>
-            <div class="verdict-rows">
-              <div class="vrow"><span class="src">VirusTotal</span><span class="val v-mal">23 / 94 engines</span></div>
-              <div class="vrow"><span class="src">AbuseIPDB</span><span class="val v-mal">100% confidence</span></div>
-              <div class="vrow"><span class="src">Shodan</span><span class="val v-warn">3 open ports</span></div>
-            </div>
-            <div class="ai-row">
-              <span class="spark"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3l1.6 4.6L18 9l-4.4 1.4L12 15l-1.6-4.6L6 9l4.4-1.4z"/><path d="M19 14l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg></span>
-              <span class="txt">
-                <span class="tag">Analyst Assist</span>
-                <b>High-confidence malicious</b> — known Tor exit node reused across campaigns. <b>Next:</b> block at egress and pivot on the resolving domain.
-              </span>
-            </div>
+      <div class="art"><canvas id="signal" aria-hidden="true"></canvas><p class="visually-hidden">A braided signal rotates slowly and responds to a fine pointer. Decorative artwork.</p><div class="art-controls"><button id="motion" type="button" aria-pressed="false">Pause animation</button></div></div>
+    </section>
+    <div class="trust"><span>Local-first architecture</span><span>No account required</span><span>Open source for Chrome</span></div>
+    <section class="chapter detection" id="capabilities" aria-labelledby="detection-title">
+      <div><h2 id="detection-title">Find the signal in the noise.</h2>
+        <p>A report. A ticket. A wall of logs. Mustela brings the indicators into focus, where you already read.</p>
+        <div class="type-controls" role="group" aria-label="Explore supported indicator types"><button type="button" data-type="IP" aria-pressed="true">IP</button><button type="button" data-type="DOMAIN" aria-pressed="false">Domain</button><button type="button" data-type="HASH" aria-pressed="false">Hash</button></div>
+        <p class="chapter-note"><span class="scene-description" id="type-description">Four octets. One IPv4 indicator.</span> Also detects URLs, subnets and ASN. Detection works without API keys.</p>
+      </div><div class="chapter-art"><canvas data-art="detect" aria-hidden="true"></canvas><p class="visually-hidden">Four IPv4 octets, a domain tree or a hexadecimal fingerprint, selected with the indicator type controls.</p><div class="chapter-motion"><button class="art-replay" type="button">Replay signal</button><button class="art-pause" type="button" aria-pressed="false">Pause motion</button></div></div>
+    </section>
+    <section class="product" id="demo" aria-labelledby="demo-title">
+      <h2 id="demo-title">Follow an actual investigation flow.</h2>
+      <p>Detect an indicator. Investigate it in context. Read the evidence and choose your next action.</p>
+      <div class="demo-controls"><p id="phase" role="status">Select a highlighted indicator to begin.</p><div><button id="play" type="button">Replay guide</button><button id="pause-demo" type="button" aria-pressed="false">Pause guide</button></div></div>
+      <div class="tour" role="group" aria-label="Investigation stages"><button data-stage="1" type="button">Detect</button><button data-stage="3" type="button">Investigate</button><button data-stage="4" type="button">Read evidence</button><button data-stage="5" type="button">Take action</button></div>
+      <div class="demo-shell" data-stage="1">
+        <article class="report" aria-label="Fictional incident report">
+          <div class="report-top"><span>Incident report</span><span>Fictional example</span></div>
+          <div class="report-body"><h3>Unexpected outbound activity</h3>
+            <p>After opening a suspicious attachment, an endpoint initiated repeated outbound connections.</p>
+            <p>The destination was <button class="example-ioc" id="ioc" data-kind="IP" data-ioc-type="IP" aria-label="Investigate IP 203.0.113.42" aria-controls="investigation" aria-expanded="false" type="button">203.0.113.42</button>, accompanied by DNS queries for <button class="example-ioc" data-kind="DOMAIN" data-ioc-type="DOMAIN" aria-label="Investigate domain update.example.org" aria-controls="investigation" aria-expanded="false" type="button">update.example.org</button>.</p>
+            <p>Review the destination reputation and exposed services. Correlate the results with endpoint evidence before deciding on containment.</p>
+            <div class="report-bottom"><span>Documentation IP and reserved example domain. No live lookup.</span></div>
           </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</header>
-
-<!-- ============ WORKFLOW ============ -->
-<section id="workflow">
-  <div class="container">
-    <div class="sec-head">
-      <span class="kicker">The analyst loop</span>
-      <h2>From raw page to verdict in three steps</h2>
-      <p>Open a SIEM alert, a ticket, a CTI report or an email — Mustela keeps the entire investigation inside the browser.</p>
-    </div>
-
-    <div class="steps">
-      <div class="step glass reveal">
-        <span class="num">STEP 01</span>
-        <div class="ic">
-          <svg class="ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.2"/></svg>
-        </div>
-        <h3>Detect</h3>
-        <p>Mustela scans the page locally and highlights every IOC it finds — without altering the host page's layout or behavior.</p>
-        <span class="arrow"><svg class="ico" viewBox="0 0 24 24" style="width:24px;height:24px"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></span>
-      </div>
-
-      <div class="step glass reveal">
-        <span class="num">STEP 02</span>
-        <div class="ic">
-          <svg class="ico" viewBox="0 0 24 24"><path d="m21 21-4.3-4.3"/><circle cx="11" cy="11" r="7"/></svg>
-        </div>
-        <h3>Investigate</h3>
-        <p>Click any highlight to open an in-page panel with aggregated provider verdicts and an optional AI summary — no tab switching.</p>
-        <span class="arrow"><svg class="ico" viewBox="0 0 24 24" style="width:24px;height:24px"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></span>
-      </div>
-
-      <div class="step glass reveal">
-        <span class="num">STEP 03</span>
-        <div class="ic">
-          <svg class="ico" viewBox="0 0 24 24"><path d="M3 5v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5"/><path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2"/><path d="M8 10h8"/><path d="M8 14h5"/></svg>
-        </div>
-        <h3>Keep the trace</h3>
-        <p>Verdicts are cached, history is preserved and analyst notes stay attached — all stored locally, exportable as JSON.</p>
-        <span class="arrow"></span>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ FEATURES ============ -->
-<section id="features">
-  <div class="container">
-    <div class="sec-head">
-      <span class="kicker">Capabilities</span>
-      <h2>Everything an analyst needs, in context</h2>
-      <p>Built to cut the repetitive copy-paste-pivot loop that fills SOC and CTI workflows.</p>
-    </div>
-
-    <div class="features">
-      <div class="feature glass reveal">
-        <div class="ic">
-          <svg class="ico" viewBox="0 0 24 24"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg>
-        </div>
-        <h3>In-page IOC detection</h3>
-        <p>Indicators are recognized and highlighted directly on any page, with no impact on the host site.</p>
-        <div class="types">
-          <span class="type-chip">IPv4</span>
-          <span class="type-chip">Domain</span>
-          <span class="type-chip">URL</span>
-          <span class="type-chip">MD5</span>
-          <span class="type-chip">SHA1</span>
-          <span class="type-chip">SHA256</span>
-        </div>
-      </div>
-
-      <div class="feature glass reveal">
-        <div class="ic">
-          <svg class="ico" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-        </div>
-        <h3>Aggregated verdicts</h3>
-        <p>VirusTotal, AbuseIPDB and Shodan results consolidated into a single analyst-friendly view, one click away.</p>
-      </div>
-
-      <div class="feature glass reveal">
-        <div class="ic">
-          <svg class="ico" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
-        </div>
-        <h3>Fast external pivots</h3>
-        <p>Jump to a provider's own site only when you need deeper context — never as a default reflex.</p>
-      </div>
-
-      <div class="feature glass reveal">
-        <div class="ic">
-          <svg class="ico" viewBox="0 0 24 24"><path d="m21 21-4.3-4.3"/><circle cx="11" cy="11" r="7"/></svg>
-        </div>
-        <h3>Manual &amp; context-menu lookup</h3>
-        <p>Paste any IOC into the popup, or select text on a page and investigate it straight from the right-click menu.</p>
-      </div>
-
-      <div class="feature glass reveal">
-        <div class="ic">
-          <svg class="ico" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
-        </div>
-        <h3>Local history, cache &amp; notes</h3>
-        <p>Recent investigations, cached verdicts and analyst notes — everything stays in your browser, ready to export.</p>
-      </div>
-
-      <div class="feature glass reveal">
-        <div class="ic">
-          <svg class="ico" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.4 6.4a8 8 0 1 0 11.2 0"/></svg>
-        </div>
-        <h3>Per-page control</h3>
-        <p>Highlighting in the way on a specific site? Disable Mustela on that page with a single toggle.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ AI ASSIST ============ -->
-<section id="ai" class="ai-sec">
-  <div class="ai-glow" aria-hidden="true"></div>
-  <div class="container">
-    <div class="sec-head center">
-      <span class="kicker">Analyst Assist · AI</span>
-      <h2>An AI second opinion, on your terms</h2>
-      <p>Optional and bring-your-own-model. Connect any OpenAI-compatible endpoint — including a fully local model — to turn raw verdicts into decisions.</p>
-    </div>
-
-    <div class="ai-wrap">
-      <div class="ai-card glass reveal">
-        <div class="ic">
-          <svg class="ico" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.9 2.5 2.5.9-2.5.9L19 22l-.9-2.7-2.5-.9 2.5-.9z"/></svg>
-        </div>
-        <h3>Investigation summaries</h3>
-        <p>For each IOC, the model weighs verdicts, provider disagreement and page context into a one-sentence assessment and the single best next step.</p>
-        <div class="ai-quote">
-          <span class="lbl">Generated verdict</span>
-          “High-confidence malicious domain flagged by multiple scanners; recent benign hosting hints at a possible false positive — <b>validate against your DNS logs before escalating.</b>”
-        </div>
-      </div>
-
-      <div class="ai-card glass reveal">
-        <div class="ic">
-          <svg class="ico" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="7" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8 7.5 16 8"/><path d="M7.2 8.3 11 15.7"/><path d="M16.6 9.2 12.8 16"/></svg>
-        </div>
-        <h3>Cross-IOC correlation</h3>
-        <p>Ask the model to find patterns across your recent investigations — shared infrastructure, ASN clustering and campaign indicators — with a clear relationship verdict.</p>
-        <div class="ai-quote">
-          <span class="lbl">Generated correlation</span>
-          “All eight indicators share one ASN and overlap with known phishing infrastructure — <b>likely coordinated. Block the set and correlate with C2 sinkhole activity.</b>”
-        </div>
-      </div>
-    </div>
-
-    <div class="ai-byo">
-      <span class="lbl">Works with</span>
-      <span class="model">Anthropic Claude</span>
-      <span class="model">OpenAI</span>
-      <span class="model">Ollama (local)</span>
-      <span class="model">LM Studio · vLLM</span>
-    </div>
-  </div>
-</section>
-
-<!-- ============ PRIVACY ============ -->
-<section id="privacy">
-  <div class="container">
-    <div class="privacy-wrap">
-      <div class="privacy-card glass reveal">
-        <div class="shield">
-          <svg class="ico" viewBox="0 0 24 24" style="width:28px;height:28px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><rect x="9" y="11" width="6" height="5" rx="1"/><path d="M10 11V9a2 2 0 0 1 4 0v2"/></svg>
-        </div>
-        <div class="big">No backend</div>
-        <div class="sub">No telemetry · No analytics · No accounts</div>
-      </div>
-
-      <div>
-        <div class="sec-head" style="margin-bottom:28px">
-          <span class="kicker">Trust posture</span>
-          <h2>Transparent by design</h2>
-        </div>
-        <ul class="privacy-list">
-          <li>
-            <span class="check"><svg class="ico" viewBox="0 0 24 24"><path d="m5 12 5 5 9-11"/></svg></span>
-            <span><b>Detection runs locally.</b> IOC parsing and highlighting never leave your browser.</span>
-          </li>
-          <li>
-            <span class="check"><svg class="ico" viewBox="0 0 24 24"><path d="m5 12 5 5 9-11"/></svg></span>
-            <span><b>Storage stays local.</b> Settings, cache, history and notes live in <code>chrome.storage.local</code>.</span>
-          </li>
-          <li>
-            <span class="check"><svg class="ico" viewBox="0 0 24 24"><path d="m5 12 5 5 9-11"/></svg></span>
-            <span><b>Investigations use configured integrations.</b> Enabled providers, including MISP, receive IOC during lookup. Adding to MISP is a separate action; manual pivots can disclose IOC without a key.</span>
-          </li>
-          <li>
-            <span class="check"><svg class="ico" viewBox="0 0 24 24"><path d="m5 12 5 5 9-11"/></svg></span>
-            <span><b>AI is opt-in.</b> Once configured, summaries run automatically on uncached investigations and may include URL/title and provider context. Correlation sends selected history. A local model does not stop other provider or pivot traffic. <a href="https://github.com/ArmorIntel/mustela/blob/main/docs/PRIVACY_TRANSPARENCY.md">Read the privacy details</a>.</span>
-          </li>
-        </ul>
-        <p class="install-note" style="margin-top:20px">
-          Full details in
-          <a href="https://github.com/ArmorIntel/mustela/blob/main/docs/PRIVACY_TRANSPARENCY.md">PRIVACY_TRANSPARENCY.md</a>.
-        </p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ INSTALL ============ -->
-<section id="install">
-  <div class="container">
-    <div class="sec-head center">
-      <span class="kicker">Deployment</span>
-      <h2>Up and running in two minutes</h2>
-      <p>Works out of the box for detection and pivots. Add free API keys later for enriched verdicts.</p>
-    </div>
-
-    <div class="install-wrap">
-      <!-- Option A -->
-      <div class="install-card glass reveal">
-        <div class="ihead">
-          <span class="tag">RECOMMENDED</span>
-          <h3>Download a release</h3>
-        </div>
-        <div class="ibody">
-          <a class="btn btn-primary" href="https://github.com/ArmorIntel/mustela/releases/latest" style="width:100%;justify-content:center;margin-bottom:18px">
-            <svg class="ico" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M5 21h14"/></svg>
-            Download latest release
-          </a>
-          <ol class="ol">
-            <li>Unzip <code>mustela-chrome.zip</code> anywhere.</li>
-            <li>Open <code>chrome://extensions</code> and enable <b>Developer mode</b>.</li>
-            <li>Click <b>Load unpacked</b> and select the unzipped folder.</li>
-            <li>The Mustela icon appears in your toolbar — done.</li>
-          </ol>
-          <p class="install-note">No build tools required.</p>
-        </div>
-      </div>
-
-      <!-- Option B -->
-      <div class="install-card glass reveal">
-        <div class="ihead">
-          <span class="tag">FROM SOURCE</span>
-          <h3>Build it yourself</h3>
-        </div>
-        <div class="ibody">
-          <div class="codeblock">
-            <button class="copy-btn" type="button" data-copy="git clone https://github.com/ArmorIntel/mustela.git&#10;cd mustela&#10;npm install &amp;&amp; npm run build">
-              <svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-              Copy
-            </button>
-            <pre><span class="cm"># clone, install &amp; build</span>
-git clone https://github.com/ArmorIntel/mustela.git
-cd mustela
-npm install &amp;&amp; npm run build</pre>
+        </article>
+        <span class="guide-pointer" aria-hidden="true" hidden>↖</span>
+        <aside class="mustela-panel" id="investigation" aria-label="Mustela example investigation" hidden>
+          <header><strong>Mustela</strong><button id="close" type="button" aria-label="Close investigation">×</button></header>
+          <div class="panel-body">
+            <div class="pill-row"><span id="ioc-kind">IP</span><button id="copy-ioc" type="button" aria-label="Copy selected example indicator">203.0.113.42</button></div>
+            <p class="panel-disclaimer">Fictional scores, source data, recommendations and AI output. No live lookup.</p>
+            <div class="panel-loading" role="status" hidden>Loading fictional evidence…</div>
+            <div class="summary-box" data-reveal="3" hidden><div class="summary-label">Global verdict</div><strong class="global-score"><span id="verdict">malicious</span> · <span id="score">92</span>/100</strong><p id="source-count">4/4 sources usable</p></div>
+            <div class="summary-box" data-reveal="3" hidden><div class="summary-label">Threat summary</div><p>Example signals require correlation with endpoint evidence.</p></div>
+            <div class="summary-box" data-reveal="4" hidden><strong>Investigate and contain if confirmed</strong><p>Fictional recommendation: correlate endpoint and DNS evidence before containment.</p></div>
+            <div class="provider-stack" data-reveal="4" hidden></div>
+            <div class="summary-box" data-reveal="5" hidden><div class="summary-label">Analyst Assist · Optional</div><p id="demo-ai"></p></div>
+            <div class="analyst-actions" data-reveal="5" hidden><button id="rerun" type="button">Re-run</button><button id="misp" type="button">Add to MISP</button><button id="copy-export" type="button">Copy export</button><button id="download" type="button">Download JSON</button></div>
+            <div class="summary-box" data-reveal="5" hidden><label for="analyst-note">Analyst note</label><textarea id="analyst-note" rows="3" placeholder="Add a note for this fictional investigation"></textarea></div>
+            <small id="note-status" role="status">Demo note stays in this session only.</small>
+            <div id="fallback-wrap" hidden><label for="copy-fallback">Select and copy example data manually</label><textarea id="copy-fallback" readonly rows="5"></textarea></div>
           </div>
-          <p class="install-note" style="margin:0 0 14px">Or run the one-liner (Git + Node 18+):</p>
-          <div class="codeblock" style="margin-bottom:0">
-            <button class="copy-btn" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/ArmorIntel/mustela/main/install.sh | bash">
-              <svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-              Copy
-            </button>
-            <pre><span class="cy">curl</span> -fsSL https://raw.githubusercontent.com/ArmorIntel/mustela/main/install.sh | bash</pre>
-          </div>
-          <p class="install-note">Then load <code>dist/chrome</code> via <b>Load unpacked</b>.</p>
-        </div>
+        </aside>
       </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ FOOTER ============ -->
-<footer>
-  <div class="container">
-    <div class="foot-grid">
-      <div class="foot-brand">
-        <img class="logo" src="icon128.png" alt="">
-        <div class="meta">
-          <strong>Mustela</strong>
-          Small, fast, and very good at hunting.
-        </div>
+      <p class="demo-caption">Offline demonstration. Scores, provider data, recommendations and AI output in the complete example are fictional. No provider, MISP or model is called here.</p>
+    </section>
+    <section class="chapter enrichment" aria-labelledby="sources-title">
+      <div class="chapter-art"><canvas data-art="enrich" aria-hidden="true"></canvas><p class="visually-hidden">VirusTotal and AbuseIPDB signals, Shodan service context and internal MISP intelligence flow into the global verdict.</p><div class="chapter-motion"><button class="art-replay" type="button">Replay signal</button><button class="art-pause" type="button" aria-pressed="false">Pause motion</button></div></div>
+      <div><h2 id="sources-title">Many sources.<br>One clearer picture.</h2>
+        <p>Compare reputation with context. VirusTotal and AbuseIPDB provide signals, Shodan adds service context, and MISP connects internal intelligence.</p>
+        <p class="chapter-note">IP enrichment supports VirusTotal, AbuseIPDB, Shodan and MISP. Domain enrichment supports VirusTotal and MISP. MISP uses your configured instance, not a public pivot.</p>
+        <p class="chapter-note">Enriched results require configured services; detection and external pivots do not.</p>
       </div>
-      <div class="foot-links">
-        <a href="https://github.com/ArmorIntel/mustela">
-          <svg class="ico" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.1.1 1.7 1.1 1.7 1.1 1 1.7 2.7 1.2 3.3.9.1-.7.4-1.2.7-1.5-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0C16.9 4.7 17.9 5 17.9 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
-          GitHub
-        </a>
-        <a href="https://github.com/ArmorIntel/mustela/blob/main/LICENSE">
-          <svg class="ico" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M3 7l9-4 9 4"/><path d="M5 7l-2 5a3 3 0 0 0 6 0L7 7"/><path d="M19 7l-2 5a3 3 0 0 0 6 0l-2-5"/><path d="M7 21h10"/></svg>
-          MIT License
-        </a>
-        <a href="https://github.com/ArmorIntel/mustela/blob/main/SECURITY.md">
-          <svg class="ico" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          Security
-        </a>
+    </section>
+    <section class="chapter action" aria-labelledby="trace-title">
+      <div><h2 id="trace-title">Carry the evidence forward.</h2>
+        <p>Add an analyst note. Copy an investigation export. Download JSON or add an indicator to your configured MISP instance.</p>
+        <div class="action-controls" role="group" aria-label="Explore investigation actions"><button type="button" data-action="NOTE" aria-pressed="true">Notes</button><button type="button" data-action="JSON" aria-pressed="false">JSON export</button><button type="button" data-action="MISP" aria-pressed="false">MISP</button></div>
+        <p class="chapter-note scene-description" id="action-description">Keep the rationale with the investigation. Notes are stored locally in the extension.</p>
+      </div><div class="chapter-art"><canvas data-art="act" aria-hidden="true"></canvas><p class="visually-hidden">The same IOC travels to an analyst note, JSON investigation export or an attribute in a configured MISP event.</p><div class="chapter-motion"><button class="art-replay" type="button">Replay signal</button><button class="art-pause" type="button" aria-pressed="false">Pause motion</button></div></div>
+    </section>
+    <section class="chapter ai" id="analyst-assist" aria-labelledby="assist-title">
+      <div class="chapter-art ai-art"><canvas id="thinking-orb" aria-hidden="true"></canvas><p class="visually-hidden">Example indicators connect, their fragments gather and mix in a growing orb, then return analyst next steps. Fictional correlation, not a live model call.</p><div class="orb-controls"><span id="orb-state">Example correlation</span><button id="orb-pause" type="button" aria-pressed="false">Pause correlation</button></div></div>
+      <div><h2 id="assist-title">Analyst Assist.<br>A second perspective.</h2>
+        <p>AI-generated investigation briefs, suggested next steps and correlation across your investigation history. Your judgment stays in charge.</p>
+        <p class="chapter-note">Opt in and connect your OpenAI-compatible endpoint, including local models. Mustela remains usable without AI.</p>
+        <div class="ai-brief"><div class="brief-top"><strong>Example AI brief</strong><button id="ai-example" type="button">Replay correlation</button></div><ol id="ai-output" aria-label="Illustrative analyst next steps"><li>Validate the related process.</li><li>Correlate network and DNS activity.</li><li>Escalate if the evidence confirms compromise.</li></ol><p id="ai-caption" class="ai-stage-caption" role="status">Example indicators connect before the analyst brief appears.</p><small>Illustrative output only. No model is called here.</small></div>
       </div>
-    </div>
-    <p class="foot-tag">Mustela — named after the weasel genus. © 2026 · Released under the MIT License.</p>
-  </div>
-</footer>
-
-<script>
-  // Scroll reveal (respects reduced-motion)
-  (function () {
-    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    var els = document.querySelectorAll('.reveal');
-    if (reduce || !('IntersectionObserver' in window)) {
-      els.forEach(function (el) { el.classList.add('in'); });
-      return;
-    }
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e, i) {
-        if (e.isIntersecting) {
-          var el = e.target;
-          setTimeout(function () { el.classList.add('in'); }, (i % 3) * 80);
-          io.unobserve(el);
-        }
-      });
-    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
-    els.forEach(function (el) { io.observe(el); });
-  })();
-
-  // Copy buttons
-  document.querySelectorAll('.copy-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var text = btn.getAttribute('data-copy') || '';
-      navigator.clipboard.writeText(text).then(function () {
-        var label = btn.querySelector('svg') ? btn.lastChild : null;
-        var prev = btn.textContent.trim();
-        btn.innerHTML = '<svg class="ico" viewBox="0 0 24 24"><path d="m5 12 5 5 9-11"/></svg> Copied';
-        setTimeout(function () {
-          btn.innerHTML = '<svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg> Copy';
-        }, 1600);
-      });
-    });
-  });
-</script>
-
+    </section>
+    <section class="privacy" id="privacy" aria-labelledby="privacy-title">
+      <div><h2 id="privacy-title">Your browser.<br>Your investigation.</h2>
+        <p>No Mustela backend or account. Extension settings and analyst notes are stored locally.</p>
+        <p>Provider lookups, configured MISP and optional Analyst Assist contact their configured destinations. External pivots open third-party sites.</p>
+        <p>With Analyst Assist enabled and configured, uncached investigations automatically send IOC, provider summaries and available page URL/title to your chosen endpoint. Correlation sends selected history through a separate action. A local-first architecture does not mean zero disclosure.</p>
+        <a href="https://github.com/ArmorIntel/mustela/blob/main/docs/PRIVACY_TRANSPARENCY.md">Read the privacy documentation</a>
+      </div>
+      <div class="privacy-visual"><div class="boundary"><span>Your browser</span><strong>Page → Indicator → Investigation</strong><span>Local settings and notes</span></div><div class="connector" aria-hidden="true"></div><p>Configured intelligence providers</p><small>Provider connections are configured by the analyst.</small></div>
+    </section>
+    <section class="closing" id="install" aria-labelledby="install-title">
+      <h2 id="install-title">Follow the signal.<br>Keep the context.</h2>
+      <p>Download the Chrome ZIP from the latest release, unzip it, enable Developer mode in <code>chrome://extensions</code>, then choose Load unpacked and select the extracted folder.</p>
+      <div class="actions"><a class="button" href="https://github.com/ArmorIntel/mustela/releases/latest">Download latest release</a><a class="button secondary" href="https://github.com/ArmorIntel/mustela#installation">Installation instructions</a><a class="text-link" href="https://github.com/ArmorIntel/mustela">View source</a></div>
+    </section>
+  </main>
+  <footer class="site-footer"><p>Mustela. In-page IOC investigation.</p><div><a href="https://github.com/ArmorIntel/mustela">GitHub</a><a href="https://github.com/ArmorIntel/mustela/blob/main/LICENSE">MIT license</a></div></footer>
+  <script type="module" src="assets/landing/demo.js"></script>
+  <script type="module" src="assets/landing/signal.js"></script>
+  <script type="module" src="assets/landing/chapters.js"></script>
+  <script type="module" src="assets/landing/orb.js"></script>
 </body>
 </html>

@@ -1,0 +1,68 @@
+/* Demo-only styles, isolated from both the host page and the extension runtime. */
+.landing .demo-shell { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 400px; min-height: 700px; padding: 30px; gap: 28px; align-items: start; background: #0d121c; border: 1px solid var(--line); border-radius: 6px; }
+.landing .demo-shell .report { min-width: 0; border: 1px solid #303d54; border-radius: 4px; background: #141c2a; margin-top: 35px; }
+.landing .demo-shell .report-top { display: flex; justify-content: space-between; gap: 10px; padding: 14px 22px; color: var(--muted); font-size: 12px; border-bottom: 1px solid #303d54; }
+.landing .demo-shell .report-body { padding: 30px 28px; }
+.landing .demo-shell h3 { font-size: 26px; line-height: 1.25; letter-spacing: -.025em; font-weight: 500; margin: 0 0 24px; }
+.landing .demo-shell .report p { color: #b8c3d7; font-size: 14px; line-height: 2.15; overflow-wrap: anywhere; }
+.landing .demo-shell .example-ioc { position: relative; font: 600 13px/1.6 var(--mono); min-height: 44px; padding: 3px 8px; border: 1px solid #74839e; border-radius: 999px; background: #b5c2d9; color: #172032; cursor: pointer; }
+.landing .demo-shell .example-ioc::after { content: attr(data-ioc-type); position: absolute; top: -18px; left: 8px; font: 700 12px/1.5 var(--mono); padding: 1px 6px; background: #dce5f5; color: #172032; border-radius: 999px; opacity: 0; pointer-events: none; }
+.landing .demo-shell .example-ioc:hover::after, .landing .demo-shell .example-ioc:focus::after { opacity: 1; }
+.landing .demo-shell .report-bottom { border-top: 1px solid #303d54; padding-top: 20px; color: var(--muted); font-size: 12px; margin-top: 28px; }
+.landing .demo-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 24px 0 16px; }
+.landing .demo-controls p { color: var(--muted); font-size: 14px; }
+.landing .demo-controls > div, .landing .tour { display: flex; flex-wrap: wrap; gap: 8px; }
+.landing .tour { margin-bottom: 20px; }
+.landing .product button { font-family: inherit; cursor: pointer; }
+.landing .demo-controls button, .landing .tour button { min-height: 44px; padding: 8px 12px; border: 1px solid #74839e; border-radius: 4px; background: #101622; color: #edf1fa; }
+.landing .tour button[aria-pressed="true"] { background: #315bd6; color: #fff; }
+.landing .product button:hover { box-shadow: inset 0 0 0 1px #769bff; }
+.landing .demo-shell .guide-pointer { position: absolute; font-size: 32px; color: #fff; text-shadow: 0 2px 4px #080b11; pointer-events: none; z-index: 2; }
+.landing .demo-shell .mustela-panel { min-width: 0; max-height: 635px; overflow: auto; border: 1px solid #74839e; border-radius: 24px; background: #262e3c; color: #edf1fa; box-shadow: 0 24px 64px #02061750, inset 0 1px 0 #ffffff47; font-size: 13px; }
+.landing .demo-shell .mustela-panel header { position: sticky; top: 0; z-index: 3; background: #262e3c; display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #526481; }
+.landing .demo-shell .panel-body { padding: 14px 16px 18px; }
+.landing .demo-shell .mustela-panel button { min-height: 44px; padding: 8px 12px; border: 1px solid #74839e; border-radius: 999px; background: #222e42; color: #edf1fa; }
+.landing .demo-shell .pill-row, .landing .demo-shell .analyst-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.landing .demo-shell .pill-row span { border-radius: 999px; background: #222e42; padding: 6px 12px; font: 700 12px/1.5 var(--mono); }
+.landing .demo-shell #copy-ioc { max-width: 100%; overflow-wrap: anywhere; font: 600 15px/1.5 var(--mono); }
+.landing .demo-shell .panel-disclaimer, .landing .demo-shell small { display: block; color: #a2aec4; font-size: 12px; line-height: 1.6; }
+.landing .demo-shell .summary-box { margin: 10px 0; padding: 12px 14px; border: 1px solid #ffffff1f; border-radius: 18px; background: #ffffff14; }
+.landing .demo-shell .summary-label { color: #a2aec4; font-size: 12px; margin-bottom: 8px; }
+.landing .demo-shell .global-score { color: #fca5a5; font-size: 20px; }
+.landing .demo-shell .summary-box p { margin: 8px 0 0; line-height: 1.5; }
+.landing .demo-shell .mustela-provider { border: 1px solid #74839e; border-radius: 18px; background: #0f172a38; padding: 12px; margin: 10px 0; overflow-wrap: anywhere; }
+.landing .demo-shell .mustela-provider summary { display: flex; justify-content: space-between; align-items: center; gap: 6px; cursor: pointer; min-height: 44px; font-weight: 600; list-style: none; }
+.landing .demo-shell .mustela-provider summary::-webkit-details-marker { display: none; }
+.landing .demo-shell .mustela-provider summary::after { content: '+'; color: #edf1fa; }
+.landing .demo-shell .mustela-provider[open] summary::after { content: '−'; }
+.landing .demo-shell .provider-title { display: flex; align-items: center; gap: 6px; }
+.landing .demo-shell .provider-badge, .landing .demo-shell .provider-kind { border-radius: 999px; padding: 6px 8px; font-size: 12px; background: #ffffff1f; }
+.landing .demo-shell .provider-kind { color: #edf1fa; }
+.landing .demo-shell .mustela-provider p { margin-bottom: 0; line-height: 1.5; }
+.landing .demo-shell textarea { display: block; width: 100%; resize: vertical; min-height: 100px; margin: 8px 0; padding: 10px; border: 1px solid #a2aec4; border-radius: 12px; background: #0d121c; color: #edf1fa; font: 14px/1.5 var(--mono); }
+.landing .demo-shell textarea::placeholder { color: #a2aec4; opacity: 1; }
+.landing .demo-shell label { font-size: 14px; }
+.landing .demo-shell #fallback-wrap { margin-top: 16px; }
+.landing .demo-shell .panel-loading { color: #a2aec4; padding: 32px 0; }
+.landing .product [hidden] { display: none; }
+@media (max-width: 1100px) {
+  .landing .demo-shell { grid-template-columns: minmax(0, 1fr) 360px; padding: 20px; gap: 20px; }
+}
+@media (max-width: 850px) {
+  .landing .demo-shell { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .landing .demo-shell .report { margin-top: 0; }
+  .landing .demo-shell .mustela-panel { width: 100%; max-height: 650px; }
+  .landing .demo-controls { align-items: start; flex-direction: column; }
+}
+@media (max-width: 600px) {
+  .landing .demo-shell { padding: 12px; gap: 18px; }
+  .landing .demo-shell .report-top { padding: 12px; }
+  .landing .demo-shell .report-body { padding: 24px 16px; }
+  .landing .demo-shell h3 { font-size: 24px; }
+  .landing .demo-shell .report p { font-size: 13px; }
+}
+/* Readable opaque bases remain in place when backdrop filtering is unsupported. */
+@supports (backdrop-filter: blur(1px)) {
+  .landing .demo-shell .example-ioc { background: linear-gradient(180deg, #ffffffd1, #ffffff8a), #b5c2d9; backdrop-filter: blur(24px); }
+  .landing .demo-shell .mustela-panel { background: #262e3cf0; backdrop-filter: blur(34px) saturate(180%); }
+}
