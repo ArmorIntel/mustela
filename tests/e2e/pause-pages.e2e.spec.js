@@ -4,6 +4,10 @@ import { startFixtureServer, launchExtensionContext, openFixturePage, openPopup,
 const send = (page, type, payload) => page.evaluate(({ type, payload }) => chrome.runtime.sendMessage({ type, payload }), { type, payload });
 const marks = (page) => page.locator('.mustela-highlight');
 const control = (page) => page.getByRole('button', { name: 'Mustela active on all pages', exact: true });
+async function expectAction(worker, paused) {
+  await expect.poll(() => worker.evaluate(() => chrome.action.getBadgeText({}))).toBe(paused ? 'OFF' : 'ON');
+  expect(await worker.evaluate(() => chrome.action.getTitle({}))).toContain(paused ? 'OFF — globally paused' : 'ON — not globally paused');
+}
 async function openPanel(worker, page, payload = null) {
   await worker.evaluate(async ({ url, payload }) => {
     const tab = (await chrome.tabs.query({})).find((tab) => tab.url === url);
@@ -81,6 +85,7 @@ test('persisted OFF remains effective after a browser and service-worker restart
     const reopened = await openPopup(extension.context, extension.extensionId);
     expect((await send(reopened, 'GET_PAUSE_STATE')).data.paused).toBe(true);
     const nextWorker = await getServiceWorker(extension.context);
+    await expectAction(nextWorker, true);
     expect(nextWorker).not.toBe(worker);
     const page = await openFixturePage(extension.context, server.urlFor('/iocs.html'));
     await expect.poll(() => page.locator('html').getAttribute('data-mustela-injected')).toBe('true');
@@ -89,6 +94,7 @@ test('persisted OFF remains effective after a browser and service-worker restart
     await expectClear(page);
     await control(reopened).click();
     await expect(marks(page).first()).toBeVisible();
+    await expectAction(nextWorker, false);
   } finally { await extension.close(); await server.close(); }
 });
 
@@ -157,6 +163,7 @@ test('confirmed popup OFF clears two keyless pages, closes panels, suspends muta
     await control(popup).press('Space');
     await expect(control(popup)).toHaveAttribute('aria-pressed', 'false');
     await expect(control(otherPopup)).toHaveAttribute('aria-pressed', 'false');
+    await expectAction(worker, true);
     await expectClear(first);
     await expectClear(second);
     for (const page of [first, second]) {
@@ -178,6 +185,7 @@ test('confirmed popup OFF clears two keyless pages, closes panels, suspends muta
     await second.locator('#appendDynamicIoc').click();
     await expect(marks(second).first()).toBeVisible();
     await expect(marks(fresh).first()).toBeVisible();
+    await expectAction(worker, false);
     await expect(first.locator('.mustela-panel')).toHaveCount(0);
     await expect(second.locator('.mustela-panel')).toHaveCount(0);
   } finally { await extension.close(); await server.close(); }
@@ -214,6 +222,7 @@ test('resume preserves URL exclusions and disabled highlighting; failed popup wr
     await expect(control(popup)).toHaveAttribute('aria-pressed', 'true');
     await expect(marks(first).first()).toBeVisible();
     await worker.evaluate(() => { chrome.storage.local.set = originalStorageSet; });
+    await expectAction(worker, false);
     await popup.getByRole('button', { name: 'Retry global change' }).click();
     await expect(control(popup)).toHaveAttribute('aria-pressed', 'false');
     await expectRetryAbsent(popup);
