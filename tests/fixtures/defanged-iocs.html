@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Defanged indicators</title>
+<body>
+<p id="report">Before (hxxp://evil[.]com/a); HXXPS[:]//evil(.)com/a, evil[.]test and 8[.]8(.)8[.]8. Ordinary 1.1.1.1.</p>
+<textarea>8[.]8[.]8[.]8</textarea><div contenteditable="true">evil[.]test</div>
+<button id="append">Append</button><div id="dynamic"></div>
+<script>document.querySelector('#append').onclick = () => { document.querySelector('#dynamic').textContent = 'New hxxps[:]//8[.]8(.)4[.]4/a and dynamic(.)test.'; };</script>
+</body></html>
