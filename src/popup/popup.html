@@ -154,6 +154,9 @@
           <button id="manualShodanBtn" class="manual-action" type="button">Shodan</button>
         </div>
         <div id="manualHint" class="muted">Paste a single IOC to investigate it instantly.</div>
+        <button id="manualKqlBtn" class="manual-action" type="button" aria-describedby="manualKqlHelp manualKqlStatus" disabled>Copy Defender KQL</button>
+        <div id="manualKqlHelp" class="muted">Microsoft Defender XDR Advanced Hunting, last 7 days. Requires Defender for Endpoint telemetry in DeviceNetworkEvents / DeviceFileEvents. Copies locally; does not run a query.</div>
+        <div id="manualKqlStatus" class="muted" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>
     </section>
 
