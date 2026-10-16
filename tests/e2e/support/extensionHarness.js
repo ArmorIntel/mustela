@@ -16,6 +16,7 @@ async function readFixture(name) {
 export async function startFixtureServer() {
   const fixtures = {
     '/iocs.html': await readFixture('iocs.html'),
+    '/defanged-iocs.html': await readFixture('defanged-iocs.html'),
     '/dynamic-iocs.html': await readFixture('dynamic-iocs.html'),
     '/many-iocs.html': await readFixture('many-iocs.html')
   };

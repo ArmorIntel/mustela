@@ -1,7 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { addIocToMisp, getSupportedExternalProviders, isProviderSupportedForIoc, PROVIDERS } from '../src/providers/providers.js';
-import { IOC_TYPES } from '../src/shared/ioc.js';
+import { IOC_TYPES, detectSingleIoc } from '../src/shared/ioc.js';
+
+test('defanged indicators feed canonical values to supported provider pivots and lookups', async () => {
+  for (const raw of ['hxxps[:]//evil[.]test/a', 'evil(.)test', '8[.]8(.)8[.]8']) {
+    const ioc = detectSingleIoc(raw);
+    for (const provider of getSupportedExternalProviders(ioc)) {
+      assert.equal(decodeURIComponent(PROVIDERS[provider].buildExternalUrl(ioc)).includes(ioc.normalized), true);
+    }
+  }
+  await withMockFetch(async (url) => {
+    assert.equal(url, 'https://www.virustotal.com/api/v3/ip_addresses/8.8.8.8');
+    return { ok: true, json: async () => ({ data: { attributes: {} } }) };
+  }, () => PROVIDERS.virustotal.lookup(detectSingleIoc('8[.]8(.)8[.]8'), 'test-key'));
+});
 
 function withMockFetch(handler, run) {
   const originalFetch = global.fetch;

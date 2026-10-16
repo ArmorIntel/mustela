@@ -1,6 +1,39 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_SETTINGS } from '../src/storage/storage.js';
+import { detectSingleIoc } from '../src/shared/ioc.js';
+
+async function testDefangedSelections(t) {
+  const raw = 'HXXPS[:]//evil(.)com/a';
+  const normalized = 'https://evil.com/a';
+  const ioc = detectSingleIoc(raw);
+  configure({ keys: false });
+  t.mock.method(globalThis, 'fetch', async () => { throw new Error('Unexpected fetch without keys'); });
+  await menuListener({ menuItemId: 'investigate-selection', selectionText: raw }, { id: 7 });
+  assert.equal(panels[0].message.payload.normalized, normalized);
+  const keyless = await send('LOOKUP_IOC', ioc);
+  assert.equal(keyless.ok, true);
+  assert.equal(keyless.data.ioc.normalized, normalized);
+  assert.equal(store.mustela_history[0].ioc.normalized, normalized);
+  assert.deepEqual(navigations, []);
+  for (const failure of ['HTTP', 'timeout']) {
+    configure();
+    store.mustela_settings.analystAssist.enabled = false;
+    const calls = [];
+    t.mock.method(globalThis, 'fetch', async (url) => {
+      calls.push(url);
+      if (failure === 'timeout') throw new DOMException('Timed out', 'AbortError');
+      return new Response('{}', { status: 503 });
+    });
+    const result = await send('LOOKUP_IOC', ioc);
+    assert.equal(result.ok, true);
+    assert.equal(result.data.ioc.normalized, normalized);
+    assert.ok(result.data.providerResults.some((r) => !r.success && r.error));
+    assert.ok(calls.length > 0);
+    assert.ok(calls.every((url) => !url.includes('hxxp') && !url.includes('[.]') && !url.startsWith('https://evil.com')));
+    assert.deepEqual(navigations, []);
+  }
+}
 
 let store = {};
 let listener;
@@ -21,6 +54,7 @@ globalThis.chrome = {
   } }
 };
 await import('../src/background/background.js');
+test('defanged selections share normalized panels, history and partial provider failures', testDefangedSelections);
 const send = (type, payload) => new Promise((resolve) => listener({ type, payload }, {}, resolve));
 const ip = (normalized) => ({ type: 'ip', normalized });
 function configure({ keys = true, enabled = true, misp = false } = {}) {
