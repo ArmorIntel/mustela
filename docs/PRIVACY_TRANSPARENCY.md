@@ -47,14 +47,16 @@ This storage remembers configuration and investigations and reduces repeated cal
 
 ### Global transmission pause
 
-The background owns a global pause state stored separately as `mustela_paused` in `chrome.storage.local`; absence means ON (`paused: false`). It is independent of highlighting, URL rules, keys, and provider/Analyst Assist preferences. This is the background contract, not a popup control or visual propagation feature.
+The background owns a global pause state stored separately as `mustela_paused` in `chrome.storage.local`; absence means ON (`paused: false`). It is independent of highlighting, URL rules, keys, and provider/Analyst Assist preferences. The popup's named global ON/OFF button is separate from URL exclusion, keyboard-accessible, and synchronized to this confirmed state. Failed saves show an error and retry, not an OFF success.
+
+Confirmed OFF is propagated to loaded pages: highlights and detection indicators are removed, panels close, and DOM changes do not restart scanning. Content initialization fails closed until the background confirms ON, including new/reloaded pages and worker restarts. Old panel opens or lookup replies cannot reopen or repopulate panels while paused; an OFF/ON cycle also invalidates pending replies. An unavailable or non-scriptable tab does not prevent notification of the others.
 
 - `GET_PAUSE_STATE` returns the last confirmed state. `SET_PAUSE_STATE` accepts `payload: { paused: boolean }`, serializes transitions, and confirms `{ ok: true, data: { paused } }` only after storage succeeds. A failed write returns an explicit error asking for a retry; no OFF success is announced. Ordinary settings saves cannot change pause.
 - After OFF is confirmed, `LOOKUP_IOC` (including reruns/cache paths), `OPEN_EXTERNAL_PROVIDER`, `CORRELATE_IOCS`, `ADD_IOC_TO_MISP`, `TEST_API_KEY`, and investigation/pivot context menus are refused before any new API call or external navigation. This applies with or without keys, to MISP and local LLM endpoints too, and to already-open interfaces. Message refusals have `ok: false`, `code: 'MUSTELA_PAUSED'`, and an explanation; blocked menus notify the originating tab with `MUSTELA_ACTION_BLOCKED`.
 - Each new provider/LLM call and pivot is guarded. If pause is confirmed during an outstanding request, later providers and the automatic summary do not start. Shodan key validation also checks before its second (host-probe) request. Provider errors/timeouts do not bypass pause.
-- ON preserves previous preferences and existing policies; it never replays blocked actions or restarts interrupted investigations. A fresh analyst action is required, even if ON was confirmed before an old response arrived.
+- ON preserves previous preferences and existing policies; detection resumes only on permitted pages with highlighting enabled. It never reopens a panel, replays blocked actions, or restarts interrupted investigations. A fresh analyst action is required, even if ON was confirmed before an old response arrived.
 
-Pause does **not** cancel or recall requests already started, promise remote deletion, purge local data, or stop autonomous traffic from a website already opened. Detection/highlighting and local storage are not disabled by this network contract. No recipient, Chrome permission, telemetry, or cloud storage is added. The operations below describe ON behavior, subject to this pause and the protected IPv4 policy.
+Pause does **not** cancel or recall requests already started, promise remote deletion, purge local data, or stop autonomous traffic from a website already opened. Local history, cache, keys, URL exclusions and highlighting preferences are retained, not erased or overwritten. No recipient, Chrome permission, telemetry, or cloud storage is added. The operations below describe ON behavior, subject to this pause and the protected IPv4 policy.
 
 ### Protected IPv4 policy
 

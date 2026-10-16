@@ -1,4 +1,4 @@
-import { applyHistoryFilter, findSameIocHistory, getManualLookupState, mapCurrentIocsToHistory } from './state.js';
+import { createPauseController, applyHistoryFilter, findSameIocHistory, getManualLookupState, mapCurrentIocsToHistory } from './state.js';
 import { generateDefenderQuery } from '../shared/hunting.js';
 
 async function send(type, payload) {
@@ -637,7 +637,28 @@ function mountManualLookup(tab, onOpened) {
   syncState();
 }
 
+function mountGlobalPause() {
+  const button = document.getElementById('globalPauseBtn');
+  const retry = document.getElementById('pauseRetryBtn');
+  const status = document.getElementById('pauseStatus');
+  const controller = createPauseController(send, ({ paused, pending, error }) => {
+    button.disabled = pending || paused === null;
+    button.textContent = paused === null ? 'Global state unavailable' : paused ? 'Mustela OFF — resume' : 'Mustela ON — pause';
+    button.setAttribute('aria-pressed', String(paused === false));
+    status.textContent = error || (pending ? 'Saving…' : paused === null ? 'Unable to confirm global state.' : paused ? 'OFF confirmed on all pages.' : 'ON — existing page preferences apply.');
+    retry.hidden = !error;
+    retry.disabled = pending || !error;
+  });
+  button.addEventListener('click', () => controller.toggle());
+  retry.addEventListener('click', () => controller.retry());
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === 'PAUSE_STATE_UPDATED') controller.refresh();
+  });
+  controller.refresh();
+}
+
 async function init() {
+  mountGlobalPause();
   const tab = await getActiveTab();
   const url = tab?.url || '';
   const disabledRes = await send('IS_PAGE_DISABLED', { url });

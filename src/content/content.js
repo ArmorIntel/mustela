@@ -11,6 +11,35 @@ let lastDetectedIocs = [];
 let extensionDisabled = false;
 let highlightEnabled = true;
 let detectionMode = 'balanced';
+let globallyPaused = true; // Fail closed until the background confirms initialization.
+let initialized = false;
+let pauseRevision = 0;
+let panelGeneration = 0;
+
+function applyPauseState(paused) {
+  const changed = globallyPaused !== paused;
+  globallyPaused = paused;
+  if (paused) {
+    observer?.disconnect();
+    closePanel();
+    stripHighlights();
+    updatePageIndicator(0);
+    publishDetectedIocs([]);
+  } else if (initialized && changed) {
+    scanPage();
+    observePage();
+  }
+}
+
+async function syncPauseState() {
+  const revision = ++pauseRevision;
+  const response = await sendRuntimeMessage({ type: 'GET_PAUSE_STATE' });
+  if (revision === pauseRevision) applyPauseState(!response?.ok || response.data?.paused !== false);
+}
+
+function observePage() {
+  if (initialized && !globallyPaused) observer?.observe(document.documentElement, { childList: true, subtree: true });
+}
 
 function walkTextNodes(root) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -206,7 +235,7 @@ async function publishDetectedIocs(items) {
 }
 
 async function scanPage() {
-  if (extensionDisabled || !highlightEnabled) {
+  if (!initialized || globallyPaused || extensionDisabled || !highlightEnabled) {
     stripHighlights();
     updatePageIndicator(0);
     await publishDetectedIocs([]);
@@ -720,15 +749,22 @@ function renderError(message) {
 }
 
 async function openPanel(ioc, allowCache) {
+  const opening = ++panelGeneration;
+  // Guard queued opens as well as newly clicked actions against durable state.
+  await syncPauseState();
+  if (!initialized || globallyPaused || opening !== panelGeneration) return;
   renderPanelSkeleton(ioc || {});
+  const generation = panelGeneration;
   if (!ioc || !ioc.normalized || !ioc.type) {
     renderEmptyState();
     return;
   }
   const response = await sendRuntimeMessage({ type: 'LOOKUP_IOC', payload: ioc });
+  if (globallyPaused || generation !== panelGeneration) return;
   if (!response?.ok) return renderError(response?.error || 'Lookup failed');
   if (!allowCache && response.data?.cached) {
     const second = await sendRuntimeMessage({ type: 'LOOKUP_IOC', payload: { ...ioc, _rerun: Date.now() } });
+    if (globallyPaused || generation !== panelGeneration) return;
     if (!second?.ok) return renderError(second?.error || 'Lookup failed');
     return renderResult(second.data);
   }
@@ -736,6 +772,7 @@ async function openPanel(ioc, allowCache) {
 }
 
 function closePanel() {
+  panelGeneration++;
   if (panelEl) panelEl.remove();
   panelEl = null;
 }
@@ -750,6 +787,12 @@ function escapeHtml(value) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'PAUSE_STATE_UPDATED') {
+    // Invalidate work immediately, even while an authoritative read is pending.
+    if (message.payload?.paused) applyPauseState(true);
+    syncPauseState().then(() => sendResponse({ ok: true }));
+    return true;
+  }
   if (message?.type === 'OPEN_INVESTIGATION_PANEL') {
     openPanel(message.payload || null, true);
     return;
@@ -799,9 +842,11 @@ async function bootstrap() {
     highlightEnabled = settingsResponse?.data?.highlightEnabled !== false;
     detectionMode = settingsResponse?.data?.detectionMode === 'strict' ? 'strict' : 'balanced';
   } catch {}
+  await syncPauseState();
+  initialized = true;
   const debouncedScan = debounce(scanPage, 1000);
   observer = new MutationObserver(() => debouncedScan());
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  observePage();
   scanPage();
 }
 
