@@ -99,7 +99,7 @@ async function handleInvestigationMenu(info, tab, token) {
     return;
   }
 
-  if (info.menuItemId === 'open-virustotal') {
+  if (info.menuItemId === 'open-virustotal' && isProviderSupportedForIoc('virustotal', detected)) {
     const url = PROVIDERS.virustotal.buildExternalUrl?.(detected);
     if (url) await transmissions.run(token, () => chrome.tabs.create({ url }));
     return;
@@ -231,6 +231,7 @@ async function handleMessage(message, sender) {
       const settings = await getSettings();
       const ioc = message.payload?.ioc;
       if (!ioc?.normalized || !ioc?.type) return { ok: false, error: 'Invalid IOC' };
+      if (!isProviderSupportedForIoc('misp', ioc)) return { ok: false, error: 'Unsupported IOC for MISP' };
       const result = await transmissions.run(token, () => addIocToMisp(ioc, settings.providers?.misp || {}, {
         eventId: message.payload?.eventId,
         comment: message.payload?.comment,
@@ -439,6 +440,14 @@ async function lookupIoc(ioc, sender = {}, token) {
 
   const orderedResults = sortProviderResults(results);
   const summary = summarizeProviderVerdict(orderedResults);
+  if (ioc.type === 'email') {
+    summary.explanation = 'Email investigation has no compatible reputation provider. Unknown does not mean clean; use local notes and evidence.';
+    summary.threatSummary.narrative = summary.explanation;
+    summary.recommendation = {
+      level: 'info', title: 'Review local evidence', summary: summary.explanation,
+      action: 'Validate the full email address against your authorized telemetry and keep investigation notes locally.'
+    };
+  }
   if (protectedIpv4) {
     summary.explanation = PROTECTED_IPV4_EXPLANATION;
     summary.threatSummary.narrative = `${PROTECTED_IPV4_EXPLANATION} ${summary.threatSummary.narrative}`;

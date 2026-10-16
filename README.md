@@ -101,6 +101,16 @@ Detection and manual investigation recognize `hxxp`/`hxxps`, `[:]` in place of t
 
 The page keeps its original text: highlights are not links, scanning does not contact the target or providers, and nested host indicators are not counted twice. Only the investigation representation is refanged; path/query text is not rewritten. IPv6, email, defanged CIDR, other obfuscations, and indicators split across text nodes are not supported by this addition. See [privacy details](docs/PRIVACY_TRANSPARENCY.md#defanged-investigation-values).
 
+## Email indicators
+
+ASCII email addresses such as `analyst+tag@evil.test` and `First.Last@EVIL.TEST` are distinct `email` IOC in balanced/strict scans, manual lookup and selection investigations. Only the domain is lowercased (`First.Last@evil.test`); local-part case stays distinct in cache, history and local notes. Copy/export retain the complete address. Detection is local, with no provider call or automatic navigation, and ignores editable fields.
+
+Supported addresses have an unquoted dot-atom local part (no leading, trailing or consecutive dots) and an ASCII DNS domain with at least two labels. Unicode/IDN, quoted local parts, defanged email and full RFC5322 syntax are not supported. Invalid/unsupported address-like tokens do not yield nested domain or local-part IOC. Domains outside addresses remain detectable.
+
+Email has no compatible reputation provider or external pivot, including VirusTotal, AbuseIPDB, Shodan and MISP; **Add to MISP** is unavailable. No implicit domain pivot or mailto action is added. Without keys and with Analyst Assist disabled, investigation, notes, copy/export and history remain local and usable; unknown is not a clean verdict.
+
+Email can be personal data. Enabled, fully configured **Analyst Assist** can automatically send the complete address and available page URL/title to your chosen endpoint on an uncached investigation (including reruns), and explicit correlation can include email history. These remain optional, existing triggers, not a promise of zero disclosure. Detection alone and scanning an excluded page do not send it. See [email privacy details](docs/PRIVACY_TRANSPARENCY.md#email-investigation-values).
+
 ## Setting up providers
 
 Mustela detects and highlights IOC out of the box — no API keys required.

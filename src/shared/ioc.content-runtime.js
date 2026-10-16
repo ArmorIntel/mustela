@@ -5,6 +5,7 @@
   if (globalThis.MUSTELA_SHARED) return;
 
 const IOC_TYPES = {
+  EMAIL: 'email',
   IP: 'ip',
   DOMAIN: 'domain',
   URL: 'url',
@@ -113,6 +114,10 @@ function trimUrlPunctuation(value) {
 function normalizeIoc(raw, type) {
   const value = String(raw || '').trim();
   switch (type) {
+    case IOC_TYPES.EMAIL: {
+      const at = value.lastIndexOf('@');
+      return at < 0 ? value : value.slice(0, at + 1) + value.slice(at + 1).toLowerCase();
+    }
     case IOC_TYPES.URL:
       // Refang only the scheme and authority, never path/query/fragment text.
       return trimUrlPunctuation(value).replace(/^(https?|hxxps?)(?::|\[:\])\/\/((?:[^/?#@]*@)?)([^/?#:]+)(:\d+)?/i,
@@ -210,11 +215,29 @@ function parseIocsFromText(text, options = {}) {
   if (!text) return results;
   const mode = resolveDetectionMode(options.mode);
 
+  // Reserve whole address-like tokens, including invalid or unsupported ones.
+  // Never promote their local identifiers or domain suffixes independently.
+  const emailTokens = [...text.matchAll(/"[^"\r\n]*"@[^\s<>,;:]*|(?:\(\.\)|[^\s<>(),;:])+/g)]
+    .filter(([raw]) => raw.includes('@'));
+  const emails = [];
+  for (const token of emailTokens) {
+    const raw = token[0].replace(/\.+$/, '');
+    const parts = raw.split('@');
+    const [local, domain = ''] = parts;
+    const atom = /^[a-z0-9!#$%&'*+\-/=?^_`{|}~]+(?:\.[a-z0-9!#$%&'*+\-/=?^_`{|}~]+)*$/i;
+    const labels = domain.split('.');
+    if (parts.length !== 2 || !atom.test(local) || local.length > 64 || domain.length > 253
+      || labels.length < 2 || !labels.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label))) continue;
+    emails.push({ type: IOC_TYPES.EMAIL, raw, normalized: normalizeIoc(raw, IOC_TYPES.EMAIL), index: token.index, length: raw.length, confidence: 0.95 });
+  }
+
   for (const match of text.matchAll(URL_CANDIDATE)) {
     const raw = trimUrlPunctuation(match[0]);
     const normalized = normalizeIoc(raw, IOC_TYPES.URL);
     pushUnique(results, { type: IOC_TYPES.URL, raw, normalized, index: match.index ?? 0, length: raw.length, confidence: scoreDetectionConfidence(IOC_TYPES.URL, normalized) });
   }
+
+  for (const email of emails) pushUnique(results, email);
 
   // Consume maximal colon-bearing tokens, including invalid/unsupported forms.
   // Reserving their ranges prevents accepting a suffix or a nested IPv4/CIDR.
@@ -280,7 +303,9 @@ function parseIocsFromText(text, options = {}) {
     pushUnique(results, { type: IOC_TYPES.DOMAIN, raw, normalized, index: match.index ?? 0, length: raw.length, confidence: scoreDetectionConfidence(IOC_TYPES.DOMAIN, normalized) });
   }
 
-  return results.sort((a, b) => a.index - b.index);
+  return results.filter((ioc) => [IOC_TYPES.EMAIL, IOC_TYPES.URL].includes(ioc.type)
+    || !emailTokens.some((token) => ioc.index < token.index + token[0].length && token.index < ioc.index + ioc.length))
+    .sort((a, b) => a.index - b.index);
 }
 
 function detectSingleIoc(text, options = {}) {

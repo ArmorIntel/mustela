@@ -2,6 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildThreatSummary, detectSingleIoc, isValidIpv4, isValidSubnet, normalizeIoc, parseIocsFromText, summarizeProviderVerdict, IOC_TYPES } from '../src/shared/ioc.js';
 
+test('email detection preserves local case, exact ranges and excludes nested identifiers', () => {
+  for (const mode of ['balanced', 'strict']) {
+    const raws = ['analyst+tag@evil.test', 'First.Last@EVIL.TEST', 'AS123@sub.evil.test', 'd41d8cd98f00b204e9800998ecf8427e@evil.test', "a!#$%&'*+-/=?^_`{|}~@sub.evil.test", 'analyst+tag@evil.test'];
+    const text = raws.join(' ; ');
+    const results = parseIocsFromText(text, { mode });
+    assert.equal(results.length, raws.length);
+    results.forEach((ioc, index) => {
+      const raw = raws[index];
+      assert.equal(ioc.type, 'email');
+      assert.equal(ioc.raw, raw);
+      assert.equal(ioc.normalized, raw.slice(0, raw.indexOf('@') + 1) + raw.slice(raw.indexOf('@') + 1).toLowerCase());
+      assert.equal(ioc.index, text.indexOf(raw, index ? results[index - 1].index + results[index - 1].length : 0));
+      assert.equal(ioc.length, raw.length);
+    });
+    for (const raw of ['a@@evil.test', 'a..b@sub.evil.test', '@sub.evil.test', '.a@evil.test', 'a.@evil.test', 'éa@sub.evil.test', 'a@évil.test', '"a b"@sub.evil.test', '"First.Last"@evil.test', 'a@evil-.test', 'a@evil[.]test', 'a@evil(.)sub.test', `${'a'.repeat(65)}@evil.test`]) {
+      assert.deepEqual(parseIocsFromText(raw, { mode }), [], raw);
+      assert.deepEqual(parseIocsFromText(`${raw} standalone.test`, { mode }).map((ioc) => ioc.normalized), ['standalone.test'], raw);
+    }
+    assert.equal(parseIocsFromText('https://evil.test/a@evil.test')[0].type, 'url');
+    assert.equal(normalizeIoc('First.Last@EVIL.TEST', IOC_TYPES.EMAIL), 'First.Last@evil.test');
+  }
+});
+
 test('IPv6 uses the IP type, canonical values and exact original source ranges', () => {
   const cases = [
     ['2001:0DB8:0000:0000:0000:0000:0000:0001', '2001:db8::1'],

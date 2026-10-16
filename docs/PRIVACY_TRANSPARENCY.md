@@ -17,7 +17,7 @@ This page explains local storage, outgoing requests and their triggers, and what
 
 The extension may process:
 
-- IOC visible on the current page or entered for investigation: IPv4 and IPv6, domains, URLs, MD5/SHA1/SHA256, and subnet/ASN where supported.
+- IOC visible on the current page or entered for investigation: IPv4 and IPv6, ASCII email addresses, domains, URLs, MD5/SHA1/SHA256, and subnet/ASN where supported.
 - Page URL and title, when available, for investigation context and local history. These may also enter Analyst Assist prompts; the extension does not send the full page to the LLM.
 - Provider configuration: enabled flags and API keys; MISP base URL and default event ID.
 - Analyst Assist configuration: enabled flag, base URL, API key, and model name.
@@ -33,6 +33,14 @@ Supported defanged URLs, domains and IPv4 keep their source spelling and positio
 Full/compressed IPv6 and valid IPv4 tails use the existing `ip` type. Source spelling and offsets remain local; normalized investigation values are lowercase, compress the longest zero run (first tie, never a single zero), and convert dotted tails to hexadecimal (`::ffff:192.0.2.1` → `::ffff:c000:201`). Surrounding brackets are not part of a standalone IP; HTTP(S) URLs with bracketed IPv6 stay single URL indicators. IPv6 CIDR, zone IDs and refang are not supported.
 
 Detection/highlighting makes no target or provider request and never automatically navigates to the address. Existing explicit investigation, copy/export, local history, configured provider/MISP requests, Analyst Assist and website pivots use the normalized value with the same recipients and triggers documented below. MISP IP search uses `ip-src`/`ip-dst`; explicit adds use `ip-dst`. Third-party IPv6 support varies; errors/timeouts do not establish a clean verdict or prevent other results. The protected IPv4 policy does not classify IPv6, including loopback, private and IPv4-mapped literals: check sensitivity and recipients before investigating. No permissions, telemetry or credentials requirement are added.
+
+### Email investigation values
+
+ASCII, non-defanged email addresses are distinct `email` IOC, not their domains. The dot-atom local part retains its case; only the DNS domain is lowercased. Source spelling/positions are preserved for highlighting. Cache, local history and notes distinguish local-part case. Unsupported Unicode/IDN, quoted local parts and malformed address-like tokens do not promote nested indicators. Editable fields are not scanned; no registration capture or account collection is added.
+
+An email address may identify a person. Detection/highlighting are local and do not request any provider or navigate; excluded pages do not scan. Existing tab detection state and investigation cache/history are held in `chrome.storage.local`, not synced. Explicit copy/export includes the full address and may disclose it wherever you paste/share. No compatible provider is added: email lookups, reruns and pivots cannot send it to VirusTotal, AbuseIPDB, Shodan or MISP, and Add to MISP is unavailable. No domain extraction pivot or mailto action is provided. Without keys and with Analyst Assist disabled, the investigation remains local and useful without claiming reputation.
+
+Email is eligible for the existing optional Analyst Assist flows: when enabled with endpoint, key and model, an uncached investigation automatically sends the full normalized email/type and available page URL/title to that endpoint. An explicit correlation request can include selected email history and page context under the existing selection rules. LLM errors/timeouts remain non-blocking for investigation and may already have transmitted data. Detection alone does not trigger either flow. Local-first does not mean zero sending; review potentially personal data before enabling these options. No recipient, permission or telemetry is added.
 
 ## What stays local
 
