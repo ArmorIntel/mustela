@@ -32,6 +32,7 @@ The following are stored in `chrome.storage.local` in the browser profile:
 - Analyst Assist settings, API key, base URL, and model.
 - Highlight/detection preferences, cache TTL, and disabled-page rules.
 - Recent investigation history with IOC, page URL/title, verdict, score, occurrence count, pinning, and analyst notes.
+- A manual TLP 2.0 sharing label per history entry (IOC type + normalized value), shared across pages investigating the same IOC. New/legacy entries are unclassified (`null`), never CLEAR by default. Unknown stored values are treated as unclassified. Clearing history or eviction beyond 50 entries removes the label and note locally; it does not delete exports or remote MISP attributes.
 - Cached investigation results, including compact provider results and the investigation's LLM summary, action, and raw response text when present.
 - Summary/action text copied into history, with its LLM or built-in source recorded.
 - Last detected IOC for tab state.
@@ -50,13 +51,21 @@ Paths below are relative to the selected instance/endpoint base URL where applic
 | Public-provider key validation | Respective provider API | `GET` validation/probe endpoints | Key; AbuseIPDB and Shodan also probe the fixed public IP `8.8.8.8` | Same provider-specific authentication as lookup | Configuration test/validation |
 | MISP connection test | Your chosen MISP instance | `GET /servers/getVersion` | Connection/version request, no investigation IOC | API key in `Authorization` header (not Bearer) | Test connection with base URL and key |
 | MISP lookup | Your chosen MISP instance | `POST /attributes/restSearch` | IOC value and attribute type; IP searches both `ip-src` and `ip-dst`; JSON return format, page 1, limit 10 | API key in `Authorization` header | An investigation not served from cache with MISP enabled, base URL/key configured, and supported IOC type |
-| MISP attribute creation | Your chosen MISP instance | `POST /attributes/add/{eventId}` | IOC value, attribute type/category, `to_ids`, comment, and target event ID in the path (explicit or configured default) | API key in `Authorization` header | Dedicated **Add to MISP** action; requires a target event, not performed by lookup |
+| MISP attribute creation | Your chosen MISP instance | `POST /attributes/add/{eventId}` | IOC value, attribute type/category, `to_ids`, comment, confirmed TLP attribute tag when classified, and target event ID in the path (explicit or configured default) | API key in `Authorization` header | Dedicated **Add to MISP** action; requires a target event, not performed by lookup |
 | Analyst Assist configuration validation | Your chosen OpenAI-compatible endpoint, local or remote | `GET /models` | Model-list request; no investigation prompt (the configured model is checked against the response locally) | API key in `Authorization: Bearer …` header | Configuration validation with base URL and key |
 | Analyst Assist investigation summary | Your chosen OpenAI-compatible endpoint, local or remote | `POST /chat/completions` | Configured model and summary prompt described below | API key in `Authorization: Bearer …` header | Automatically during an investigation not served from cache when enabled with base URL, key, and model; no distinct AI click |
 | Analyst Assist correlation | Same chosen OpenAI-compatible endpoint | `POST /chat/completions` | Configured model and prompt built from 2–10 selected history entries, plus available current-page context | API key in `Authorization: Bearer …` header | Dedicated correlation action with Analyst Assist enabled/configured and at least 2 history entries |
 | Manual external pivot | Destination provider website | Normal browser navigation to the pivot URL | IOC embedded in destination URL | Normal browser/site authentication, if any; no extension API key required | Opening an external pivot |
 
 MISP uses `POST` for both searching and adding: **POST does not always mean a write**. Lookup searches existing attributes; only the dedicated add action creates an attribute. MISP supports IP, domain, URL, MD5, SHA1, and SHA256, not ASN/subnet. Its label as an internal provider does not keep data inside the browser: requests go to the chosen instance.
+
+### Manual TLP labels and exports
+
+Changing the TLP selector only writes local history; it adds no provider request. Copy export and Download JSON include the canonical root `tlp` field (or `null` for Not classified), together with IOC, note and results, without provider configuration/API keys. Whoever receives that file or copied text receives the sharing label too.
+
+Only the explicit **Add to MISP** action sends the selected label to an integration, as `Tag: [{name: 'tlp:clear'}]`, `tlp:green`, `tlp:amber`, `tlp:amber+strict`, or `tlp:red` on the created attribute. Unclassified adds have no TLP tag. No event distribution or publication is changed, and failed adds are not retried without a tag or automatically. Saving/loading must finish before copy/export/add becomes available; a failed save retains the last confirmed label and permits a manual retry.
+
+A sharing label, not a network control. Check the recipient before sharing. These labels do not authorize sharing or filter existing provider lookups, external pivots, or Analyst Assist. Selecting RED cannot reverse earlier disclosures. TLP is separate from reputation tags and is not included in summary or correlation LLM prompts. No new recipient, telemetry, or Chrome permission is introduced.
 
 ### Analyst Assist prompt contents and automatic summaries
 

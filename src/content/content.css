@@ -131,6 +131,34 @@
   box-shadow: 0 24px 64px rgba(15,23,42,.12), inset 0 1px 0 rgba(255,255,255,.72);
 }
 
+.mustela-panel #mustela-tlp {
+  color-scheme: dark;
+  color: #f8fafc;
+  background: #1e293b;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 8px;
+  font: inherit;
+  width: 100%;
+}
+
+.mustela-panel--light #mustela-tlp {
+  color-scheme: light;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.mustela-panel #mustela-tlp:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+.mustela-panel #mustela-tlp-help,
+.mustela-panel #mustela-tlp-status {
+  font-size: 12px;
+  color: var(--panel-muted);
+}
+
 .mustela-panel header {
   display:flex;
   justify-content:space-between;

@@ -1,7 +1,7 @@
 import { buildThreatSummary, detectSingleIoc, summarizeProviderVerdict } from '../shared/ioc.js';
 import { generateCorrelationAnalysis, generateInvestigationSummary, validateOpenAiCompatibleConfig } from '../integrations/assistants.js';
 import { addIocToMisp, isProviderSupportedForIoc, PROVIDERS } from '../providers/providers.js';
-import { addHistory, clearCache, clearDisabledPages, clearHistory, getCachedResult, getDetectedForTab, getHistory, getHistoryEntry, getSettings, isPageDisabled, saveDetectedForTab, saveHistoryNote, saveSettings, setCachedResult, setPageDisabled, toggleHistoryPin } from '../storage/storage.js';
+import { addHistory, clearCache, clearDisabledPages, clearHistory, getCachedResult, getDetectedForTab, getHistory, getHistoryEntry, getSettings, isPageDisabled, saveDetectedForTab, saveHistoryNote, saveHistoryTlp, saveSettings, setCachedResult, setPageDisabled, toggleHistoryPin } from '../storage/storage.js';
 
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
@@ -142,6 +142,8 @@ async function handleMessage(message, sender) {
       return { ok: true, data: await toggleHistoryPin(message.payload?.historyKey, !!message.payload?.pinned) };
     case 'SAVE_HISTORY_NOTE':
       return { ok: true, data: await saveHistoryNote(message.payload?.historyKey, message.payload?.analystNote) };
+    case 'SAVE_HISTORY_TLP':
+      return { ok: true, data: await saveHistoryTlp(message.payload?.historyKey, message.payload?.tlp) };
     case 'IS_PAGE_DISABLED':
       return { ok: true, data: await isPageDisabled(message.payload?.url) };
     case 'SET_PAGE_DISABLED':
@@ -185,7 +187,8 @@ async function handleMessage(message, sender) {
       if (!ioc?.normalized || !ioc?.type) return { ok: false, error: 'Invalid IOC' };
       const result = await addIocToMisp(ioc, settings.providers?.misp || {}, {
         eventId: message.payload?.eventId,
-        comment: message.payload?.comment
+        comment: message.payload?.comment,
+        tlp: message.payload?.tlp
       });
       return { ok: true, data: result };
     }

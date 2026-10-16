@@ -1,3 +1,5 @@
+import { normalizeTlp, validateTlp } from '../shared/tlp.js';
+
 const SETTINGS_KEY = 'mustela_settings';
 const HISTORY_KEY = 'mustela_history';
 const CACHE_KEY = 'mustela_cache';
@@ -91,6 +93,7 @@ export function normalizeHistoryEntry(entry) {
     pinned: !!entry?.pinned,
     pinnedAt: entry?.pinnedAt || '',
     analystNote: String(entry?.analystNote || ''),
+    tlp: normalizeTlp(entry?.tlp),
     analystNoteUpdatedAt: entry?.analystNoteUpdatedAt || '',
     summaryText: String(entry?.summaryText || ''),
     summarySource: String(entry?.summarySource || ''),
@@ -124,6 +127,7 @@ export function mergeHistoryEntries(history, incomingEntry, limit = MAX_HISTORY_
       pinned: incoming.pinned || existing.pinned || false,
       pinnedAt: incoming.pinnedAt || existing.pinnedAt || '',
       analystNote: incoming.analystNote || existing.analystNote || '',
+      tlp: existing.tlp,
       analystNoteUpdatedAt: incoming.analystNoteUpdatedAt || existing.analystNoteUpdatedAt || '',
       summaryText: incoming.summaryText || existing.summaryText || '',
       summarySource: incoming.summarySource || existing.summarySource || '',
@@ -180,7 +184,20 @@ export async function getHistory() {
   return (data[HISTORY_KEY] || []).map((entry) => normalizeHistoryEntry(entry));
 }
 
-export async function addHistory(entry) {
+// History mutations share a queue so notes, markings and lookups cannot lose
+// each other's metadata during overlapping read/modify/write operations.
+let historyWrite = Promise.resolve();
+function mutateHistory(operation) {
+  const result = historyWrite.then(operation);
+  historyWrite = result.catch(() => undefined);
+  return result;
+}
+
+export function addHistory(entry) {
+  return mutateHistory(() => addHistoryEntry(entry));
+}
+
+async function addHistoryEntry(entry) {
   const history = await getHistory();
   const merged = mergeHistoryEntries(history, entry);
   await getStorageArea().set({ [HISTORY_KEY]: merged });
@@ -192,7 +209,11 @@ export async function getHistoryEntry(historyKey) {
   return history.find((entry) => entry.historyKey === historyKey) || null;
 }
 
-export async function toggleHistoryPin(historyKey, pinned) {
+export function toggleHistoryPin(historyKey, pinned) {
+  return mutateHistory(() => updateHistoryPin(historyKey, pinned));
+}
+
+async function updateHistoryPin(historyKey, pinned) {
   const history = await getHistory();
   const next = history.map((entry) => {
     if (entry.historyKey !== historyKey) return entry;
@@ -206,7 +227,11 @@ export async function toggleHistoryPin(historyKey, pinned) {
   return next;
 }
 
-export async function saveHistoryNote(historyKey, analystNote) {
+export function saveHistoryNote(historyKey, analystNote) {
+  return mutateHistory(() => updateHistoryNote(historyKey, analystNote));
+}
+
+async function updateHistoryNote(historyKey, analystNote) {
   const history = await getHistory();
   let updated = null;
   const next = history.map((entry) => {
@@ -223,8 +248,20 @@ export async function saveHistoryNote(historyKey, analystNote) {
   return updated;
 }
 
-export async function clearHistory() {
-  await getStorageArea().set({ [HISTORY_KEY]: [] });
+export function saveHistoryTlp(historyKey, tlp) {
+  return mutateHistory(async () => {
+    validateTlp(tlp);
+    const history = await getHistory();
+    const entry = history.find((item) => item.historyKey === historyKey);
+    if (!historyKey || !entry) throw new Error('History entry not found');
+    const updated = { ...entry, tlp };
+    await getStorageArea().set({ [HISTORY_KEY]: history.map((item) => item === entry ? updated : item) });
+    return updated;
+  });
+}
+
+export function clearHistory() {
+  return mutateHistory(() => getStorageArea().set({ [HISTORY_KEY]: [] }));
 }
 
 export async function getCache() {
