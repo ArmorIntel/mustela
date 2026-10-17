@@ -58,6 +58,12 @@ IOC detected on the current tab, with page URL/title, are stored in **`chrome.st
 
 This storage remembers configuration and investigations and reduces repeated calls. It is not a promise of non-transmission: configured credentials authenticate requests, and some locally held context is used in prompts. The correlation response is returned to the UI; that handler does not save it to the investigation cache or history. Free-form analyst notes stay local in the examined LLM flows.
 
+## Message security boundary
+
+API keys are never transmitted to visited pages or their content scripts through extension messages. Content scripts request only `highlightEnabled` and `detectionMode`; settings-change broadcasts to tabs contain exactly those two fields, not provider credentials or API configuration URLs.
+
+The background checks the Chrome-supplied sender ID and URL before processing messages. This extension's own pages (including the welcome/settings page in an extension tab) can manage settings, bulk history, cache, configuration tests, and correlation. HTTP(S) content scripts are limited to reporting detections, reading pause/display/page-disabled state, looking up IOC and opening pivots, and the panel's single-entry history, note, TLP, and explicit MISP actions. Other senders and unauthorized messages receive an explicit failure before storage, network, or navigation work. A content script cannot save settings, change global pause, or clear history through this message interface. These checks do not remove the panel's documented investigation disclosures or protect against a compromised extension page/browser profile.
+
 ## What leaves the browser
 
 ### Global transmission pause

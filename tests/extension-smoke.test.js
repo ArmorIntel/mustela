@@ -123,7 +123,8 @@ test('welcome/settings expose detection mode minimally and persist through save 
   assert.match(js, /getElementById\('llmModel'\)/);
   assert.match(js, /detectionMode: document\.getElementById\('detectionMode'\)\.value === 'strict' \? 'strict' : 'balanced'/);
   assert.match(js, /analystAssist:/);
-  assert.match(background, /detectionMode: saved\.detectionMode/);
+  assert.match(background, /payload: contentSettings\(saved\)/);
+  assert.match(background, /detectionMode: settings\.detectionMode/);
 });
 
 test('manual TLP is wired only into local history, exports and explicit MISP adds', () => {

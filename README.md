@@ -393,6 +393,7 @@ Mustela is intentionally transparent:
 
 - IOC detection and highlighting run **locally in the browser**
 - Settings, cache, history, notes, and disabled-page rules are stored in `chrome.storage.local` — not synced to any cloud
+- API keys are never sent to visited pages or their content scripts through extension messages. Content-script settings contain only highlighting and detection preferences; sender checks reserve full settings and administrative actions for this extension's own pages.
 - Investigations send IOC to enabled/configured providers, including MISP; MISP creation is a separate action
 - Enabled/configured Analyst Assist automatically receives a summary prompt on uncached investigations, including available URL/title and provider context; dedicated correlation sends selected history data
 - Manual pivots may disclose IOC without an API key; local LLM hosting does not prevent other outbound flows

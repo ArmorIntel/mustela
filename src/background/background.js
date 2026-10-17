@@ -140,7 +140,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
+// Content scripts run beside untrusted pages. Only grant the capabilities used
+// by detection and the in-page panel; settings and bulk history stay privileged.
+const CONTENT_MESSAGES = new Set([
+  'GET_CONTENT_SETTINGS', 'PAGE_IOCS_DETECTED', 'GET_PAUSE_STATE',
+  'LOOKUP_IOC', 'OPEN_EXTERNAL_PROVIDER', 'GET_HISTORY_ENTRY',
+  'SAVE_HISTORY_NOTE', 'SAVE_HISTORY_TLP', 'IS_PAGE_DISABLED', 'ADD_IOC_TO_MISP'
+]);
+
+function isMessageAuthorized(type, sender) {
+  if (!sender || !chrome.runtime.id || sender.id !== chrome.runtime.id) return false;
+  try {
+    const url = new URL(sender.url);
+    const extensionPage = url.protocol === 'chrome-extension:' && url.hostname === chrome.runtime.id;
+    // The options/welcome page can itself be displayed in an extension tab.
+    if (extensionPage) {
+      if (!sender.tab) return true;
+      const tabUrl = new URL(sender.tab.url);
+      return tabUrl.protocol === 'chrome-extension:' && tabUrl.hostname === chrome.runtime.id;
+    }
+    return !!sender.tab && ['http:', 'https:'].includes(url.protocol) && CONTENT_MESSAGES.has(type);
+  } catch {
+    return false;
+  }
+}
+
+function contentSettings(settings) {
+  return { highlightEnabled: settings.highlightEnabled, detectionMode: settings.detectionMode };
+}
+
 async function handleMessage(message, sender) {
+  if (!isMessageAuthorized(message?.type, sender)) return { ok: false, error: 'Unauthorized message' };
   const token = TRANSMISSION_MESSAGES.has(message?.type) ? await transmissions.begin() : undefined;
   switch (message?.type) {
     case 'PAGE_IOCS_DETECTED': {
@@ -169,6 +199,8 @@ async function handleMessage(message, sender) {
       try { await chrome.runtime.sendMessage(notification); } catch {}
       return { ok: true, data: state };
     }
+    case 'GET_CONTENT_SETTINGS':
+      return { ok: true, data: contentSettings(await getSettings()) };
     case 'GET_SETTINGS':
       return { ok: true, data: await getSettings() };
     case 'SAVE_SETTINGS': {
@@ -177,7 +209,7 @@ async function handleMessage(message, sender) {
         const tabs = await chrome.tabs.query({});
         await Promise.all(tabs.map((tab) => {
           if (typeof tab.id !== 'number') return Promise.resolve();
-          return chrome.tabs.sendMessage(tab.id, { type: 'SETTINGS_UPDATED', payload: { highlightEnabled: saved.highlightEnabled, detectionMode: saved.detectionMode } }).catch(() => undefined);
+          return chrome.tabs.sendMessage(tab.id, { type: 'SETTINGS_UPDATED', payload: contentSettings(saved) }).catch(() => undefined);
         }));
       } catch {}
       return { ok: true, data: saved };
