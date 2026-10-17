@@ -44,11 +44,13 @@ globalThis.chrome = {
   runtime: { onInstalled: { addListener() {} }, onMessage: { addListener(fn) { listener = fn; } } },
   contextMenus: { onClicked: { addListener(fn) { menuListener = fn; } } },
   tabs: {
+    onRemoved: { addListener() {} },
     onUpdated: { addListener() {} },
     async create(value) { navigations.push(value); },
     async sendMessage(tabId, message) { panels.push({ tabId, message }); }
   },
   storage: { local: {
+    async remove(key) { delete store[key]; },
     async get(key) { return { [key]: structuredClone(store[key]) }; },
     async set(values) { Object.assign(store, structuredClone(values)); }
   } }
