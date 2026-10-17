@@ -10,17 +10,18 @@ globalThis.chrome = {
     async setBadgeText({ text }) { badge = text; updates.push(text); },
     async setTitle(value) { title = value.title; }
   },
-  runtime: { onInstalled: { addListener() {} }, onMessage: { addListener(fn) { listener = fn; } }, async sendMessage() {} },
+  runtime: { id: 'test-extension', onInstalled: { addListener() {} }, onMessage: { addListener(fn) { listener = fn; } }, async sendMessage() {} },
   contextMenus: { onClicked: { addListener() {} } },
-  tabs: { onUpdated: { addListener() {} }, async query() { return [{ id: 1 }]; }, async sendMessage() {} },
+  tabs: { onRemoved: { addListener() {} }, onUpdated: { addListener() {} }, async query() { return [{ id: 1 }]; }, async sendMessage() {} },
   storage: { local: {
+    async remove(key) { delete store[key]; },
     async get(key) { await beforeGet(); return { [key]: store[key] }; },
     async set(values) { await beforeSet(); if (fail) throw new Error('Disk unavailable'); Object.assign(store, values); }
   } }
 };
 let serial = 0;
 const tick = () => new Promise((resolve) => setImmediate(resolve));
-const send = (type, payload) => new Promise((resolve) => listener({ type, payload }, {}, resolve));
+const send = (type, payload) => new Promise((resolve) => listener({ type, payload }, { id: 'test-extension', url: 'chrome-extension://test-extension/src/popup/popup.html' }, resolve));
 async function start(paused) {
   store = paused === undefined ? {} : { mustela_paused: paused };
   fail = false; beforeGet = beforeSet = async () => {}; updates = []; badge = ''; title = '';
