@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 - Stop annotation-triggered rescan loops. Batch page additions/text changes, yield between scan slices, keep stable indicators, and publish page IOC lists only when their identities change. Bound traversal and retained detection state to 1,500 nodes and parse at most 8,192 characters per text node; content beyond these limits is not analyzed automatically. Parser overlap checks use source-offset occupancy instead of pairwise comparisons, and oversized invalid domain runs cannot trigger quadratic backtracking. No permission, dependency, or recipient changes.
 - Align privacy documentation, README, and public-site wording with MISP requests, automatic Analyst Assist summaries, selected-history correlation, and local LLM-response storage. No runtime behavior or permissions changed.
+- Keep detected IOC in per-tab, memory-only session storage instead of disk, skip unchanged lists, store page context once, and clear detection on tab closure/navigation. Remove legacy disk-backed detection state on startup/update without changing investigation history or cache.
 
 ### Security
 - Add a persistent background transmission pause, independent of preferences, guarding investigations, pivots, correlation, MISP writes, configuration tests, and follow-up provider/LLM calls. Resuming never replays interrupted work; already-started requests and previously opened websites are not cancelled. No new permissions.

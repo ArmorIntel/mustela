@@ -365,6 +365,9 @@ Mustela stores the following locally in your browser; local storage is not a gua
 | Investigation history, including page context and summary/action text | `chrome.storage.local` |
 | Analyst notes | `chrome.storage.local` |
 | Disabled-page rules | `chrome.storage.local` |
+| IOC detected on the current tab, with page URL/title | `chrome.storage.session` (memory only; cleared on tab closure or navigation) |
+
+Detected lists are stored per tab, with page context stored once, and unchanged lists are not rewritten. They survive service-worker restarts, not browser sessions. Startup/update removes the legacy disk-backed detection key; investigation history and cache are unchanged.
 
 There is no project backend or cloud sync. Investigations can call configured providers (including your chosen MISP instance) and automatically request an Analyst Assist summary. Connection tests, dedicated MISP add/correlation actions, and manual pivots also send requests to their recipients. Full details in [`docs/PRIVACY_TRANSPARENCY.md`](docs/PRIVACY_TRANSPARENCY.md).
 

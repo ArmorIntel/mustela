@@ -14,12 +14,14 @@ globalThis.chrome = {
   runtime: { onInstalled: { addListener() {} }, onMessage: { addListener(fn) { listener = fn; } } },
   contextMenus: { onClicked: { addListener(fn) { menu = fn; } } },
   tabs: {
+    onRemoved: { addListener() {} },
     onUpdated: { addListener() {} },
     async create(value) { navigations.push(value); },
     async query() { return []; },
     async sendMessage(id, message) { panels.push(message); }
   },
   storage: { local: {
+    async remove(key) { delete store[key]; },
     async get(key) { await beforeGet(key); return { [key]: structuredClone(store[key]) }; },
     async set(values) {
       await beforeSet(values);

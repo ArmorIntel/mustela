@@ -1,14 +1,22 @@
 import { buildThreatSummary, detectSingleIoc, isProtectedIoc, PUBLIC_LOOKUP_BLOCK_REASON, PROTECTED_IPV4_EXPLANATION, summarizeProviderVerdict } from '../shared/ioc.js';
 import { generateCorrelationAnalysis, generateInvestigationSummary, validateOpenAiCompatibleConfig } from '../integrations/assistants.js';
 import { addIocToMisp, isProviderSupportedForIoc, PROVIDERS } from '../providers/providers.js';
-import { addHistory, clearCache, clearDisabledPages, clearHistory, getCachedResult, getDetectedForTab, getHistory, getHistoryEntry, getSettings, isPageDisabled, saveDetectedForTab, saveHistoryNote, saveHistoryTlp, saveSettings, setCachedResult, setPageDisabled, toggleHistoryPin } from '../storage/storage.js';
+import { addHistory, clearCache, clearDetectedForTab, clearDisabledPages, clearHistory, getCachedResult, getDetectedForTab, getHistory, getHistoryEntry, getSettings, isPageDisabled, removeLegacyDetected, saveDetectedForTab, saveHistoryNote, saveHistoryTlp, saveSettings, setCachedResult, setPageDisabled, toggleHistoryPin } from '../storage/storage.js';
 
 import { createTransmissionGate, pauseFailure } from './pause.js';
 
 const transmissions = createTransmissionGate();
 const TRANSMISSION_MESSAGES = new Set(['LOOKUP_IOC', 'OPEN_EXTERNAL_PROVIDER', 'CORRELATE_IOCS', 'ADD_IOC_TO_MISP', 'TEST_API_KEY']);
 
+function cleanLegacyDetection() {
+  return removeLegacyDetected().catch((error) => console.warn('Unable to remove legacy detection state', error));
+}
+
+// Also runs when an existing installation starts or its service worker is restarted.
+cleanLegacyDetection();
+
 chrome.runtime.onInstalled.addListener((details) => {
+  cleanLegacyDetection();
   if (details.reason === 'install') {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/welcome/welcome.html') });
   }
@@ -61,10 +69,17 @@ async function ensureContentScripts(tabId) {
   }
 }
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'loading' || changeInfo.url !== undefined) {
+    await clearDetectedForTab(tabId).catch((error) => console.warn('Unable to clear tab detection state', error));
+  }
   if (changeInfo.status !== 'complete') return;
   if (!tab?.url || !/^https?:/i.test(tab.url)) return;
   ensureContentScripts(tabId);
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  return clearDetectedForTab(tabId).catch((error) => console.warn('Unable to clear tab detection state', error));
 });
 
 async function openInvestigationPanel(ioc, tab) {
