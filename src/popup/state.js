@@ -52,13 +52,19 @@ export function createPauseController(send, render) {
 
 export function buildIocKey(ioc) {
   const type = String(ioc?.type || '').trim().toLowerCase();
-  const normalized = String(ioc?.normalized || '').trim().toLowerCase();
+  const value = String(ioc?.normalized || '').trim();
+  const normalized = type === 'email' ? value : value.toLowerCase();
   return type && normalized ? `${type}:${normalized}` : '';
+}
+
+function historyIdentity(entry) {
+  const key = String(entry?.historyKey || '');
+  return key.startsWith('email:') ? key : key.toLowerCase();
 }
 
 export function findSameIocHistory(history, currentIocs) {
   const keys = (Array.isArray(currentIocs) ? currentIocs : []).map(buildIocKey).filter(Boolean);
-  return (Array.isArray(history) ? history : []).find((entry) => keys.includes(String(entry?.historyKey || '').toLowerCase())) || null;
+  return (Array.isArray(history) ? history : []).find((entry) => keys.includes(historyIdentity(entry))) || null;
 }
 
 export function mapCurrentIocsToHistory(history, currentIocs) {
@@ -66,7 +72,7 @@ export function mapCurrentIocsToHistory(history, currentIocs) {
   return (Array.isArray(currentIocs) ? currentIocs : []).map((ioc) => {
     const historyKey = buildIocKey(ioc);
     const lastInvestigation = historyKey
-      ? entries.find((entry) => String(entry?.historyKey || '').toLowerCase() === historyKey)
+      ? entries.find((entry) => historyIdentity(entry) === historyKey)
       : null;
     return {
       ...ioc,
@@ -119,7 +125,7 @@ export function getManualLookupState(input) {
     raw,
     ioc: null,
     chip: 'TYPE',
-    hint: raw ? 'Try a single IP, subnet, ASN, domain, URL, or hash.' : 'Paste a single IOC to investigate it instantly.',
+    hint: raw ? 'Try a single IP, subnet, ASN, email, domain, URL, or hash.' : 'Paste a single IOC to investigate it instantly.',
     pivots: {
       virustotal: false,
       abuseipdb: false,

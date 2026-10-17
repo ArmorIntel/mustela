@@ -94,7 +94,8 @@ function syncManualPivotButtons(root, ioc) {
 
 function buildHistoryKey(ioc) {
   const type = String(ioc?.type || '').trim().toLowerCase();
-  const normalized = String(ioc?.normalized || '').trim().toLowerCase();
+  const value = String(ioc?.normalized || '').trim();
+  const normalized = type === 'email' ? value : value.toLowerCase();
   return type && normalized ? `${type}:${normalized}` : '';
 }
 

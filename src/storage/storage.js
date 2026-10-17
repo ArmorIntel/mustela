@@ -68,7 +68,8 @@ function compactHistoryIoc(ioc) {
 
 export function buildHistoryKey(entry) {
   const type = String(entry?.ioc?.type || entry?.type || '').trim();
-  const normalized = String(entry?.ioc?.normalized || entry?.normalized || '').trim().toLowerCase();
+  const value = String(entry?.ioc?.normalized || entry?.normalized || '').trim();
+  const normalized = type === 'email' ? value : value.toLowerCase();
   return type && normalized ? `${type}:${normalized}` : '';
 }
 

@@ -99,6 +99,65 @@ function configure({ keys = true, enabled = true, misp = false } = {}) {
   panels.length = 0;
 }
 
+test('emails stay local with configured providers and reject every external pivot', async (t) => {
+  configure({ misp: true });
+  store.mustela_settings.analystAssist.enabled = false;
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (...args) => { calls.push(args); throw new Error('Unexpected provider fetch'); });
+  const ioc = { type: 'email', normalized: 'First.Last@evil.test' };
+  await menuListener({ menuItemId: 'investigate-selection', selectionText: 'First.Last@EVIL.TEST' }, { id: 7 });
+  assert.equal(panels[0].message.payload.normalized, ioc.normalized);
+  for (const extra of [{}, {}, { _rerun: 1 }]) {
+    const result = await send('LOOKUP_IOC', { ...ioc, ...extra });
+    assert.equal(result.ok, true);
+    assert.equal(result.data.overallVerdict, 'unknown');
+    assert.deepEqual(result.data.providerResults, []);
+  }
+  await send('SAVE_HISTORY_NOTE', { historyKey: 'email:First.Last@evil.test', analystNote: 'Keep local case' });
+  await send('LOOKUP_IOC', { type: 'email', normalized: 'first.last@evil.test' });
+  assert.equal(store.mustela_history.length, 2);
+  assert.equal(store.mustela_history.find((e) => e.normalized === ioc.normalized).analystNote, 'Keep local case');
+  assert.equal(Object.keys(store.mustela_cache).length, 2);
+  for (const provider of ['virustotal', 'abuseipdb', 'shodan']) {
+    assert.equal((await send('OPEN_EXTERNAL_PROVIDER', { provider, ioc })).ok, false);
+    await menuListener({ menuItemId: `open-${provider}`, selectionText: ioc.normalized }, {});
+  }
+  assert.equal((await send('ADD_IOC_TO_MISP', { ioc })).ok, false);
+  assert.deepEqual(navigations, []);
+  assert.deepEqual(calls, []);
+});
+
+test('email summaries and explicit correlation keep existing optional LLM triggers and failures', async (t) => {
+  const ioc = { type: 'email', normalized: 'Analyst+tag@evil.test', sourceContext: { pageUrl: 'https://case.test/report', pageTitle: 'Email investigation' } };
+  for (const failure of [null, 'HTTP', 'timeout']) {
+    configure({ misp: true });
+    const calls = [];
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+      calls.push({ url, body: JSON.parse(options.body) });
+      if (failure === 'timeout') throw new DOMException('Timed out', 'AbortError');
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"summary":"Email brief"}' } }] }), { status: failure ? 503 : 200 });
+    });
+    const result = await send('LOOKUP_IOC', ioc);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.data.providerResults, []);
+    assert.equal(result.data.overallVerdict, 'unknown');
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0].url.startsWith('http://localhost:1234/'));
+    assert.match(JSON.stringify(calls[0].body), /Analyst\+tag@evil\.test/);
+    assert.match(JSON.stringify(calls[0].body), /Email investigation/);
+    assert.ok(failure ? result.data.llmSummary.error : result.data.llmSummary.summary);
+    await send('LOOKUP_IOC', ioc);
+    assert.equal(calls.length, 1, 'cache does not resend summary');
+    store.mustela_history.push({ ioc: { type: 'email', normalized: 'other@evil.test' } });
+    const correlation = await send('CORRELATE_IOCS', {});
+    assert.equal(correlation.ok, !failure);
+    assert.equal(calls.length, 2);
+    assert.match(JSON.stringify(calls[1].body), /Analyst\+tag@evil\.test/);
+    await send('PAGE_IOCS_DETECTED', [ioc]);
+    assert.equal(calls.length, 2, 'detection never invokes LLM');
+  }
+});
+
 test('protected lookups ignore old cache and LLM data for configured, keyless and disabled providers', async (t) => {
   const calls = [];
   t.mock.method(globalThis, 'fetch', async (...args) => { calls.push(args); throw new Error('Unexpected fetch'); });

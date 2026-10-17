@@ -7,6 +7,18 @@ test('buildHistoryKey returns a stable type+normalized key', () => {
   assert.equal(buildHistoryKey({ type: 'ip', normalized: '8.8.8.8' }), 'ip:8.8.8.8');
 });
 
+test('email history keeps case-sensitive local identities and independent notes', () => {
+  const ioc = { type: 'email', raw: 'First.Last@EVIL.TEST', normalized: 'First.Last@evil.test' };
+  assert.equal(buildHistoryKey({ ioc }), 'email:First.Last@evil.test');
+  let history = mergeHistoryEntries([], { ioc, analystNote: 'Uppercase identity' });
+  history = mergeHistoryEntries(history, { ioc: { ...ioc, normalized: 'first.last@evil.test' }, analystNote: 'Lowercase identity' });
+  history = mergeHistoryEntries(history, { ioc });
+  assert.equal(history.length, 2);
+  assert.equal(history.find((entry) => entry.historyKey === 'email:First.Last@evil.test').analystNote, 'Uppercase identity');
+  assert.equal(history.find((entry) => entry.historyKey === 'email:first.last@evil.test').analystNote, 'Lowercase identity');
+  assert.equal(buildHistoryKey({ type: 'domain', normalized: 'EVIL.TEST' }), 'domain:evil.test');
+});
+
 test('normalizeHistoryEntry keeps useful local-memory metadata', () => {
   const normalized = normalizeHistoryEntry({
     ioc: {

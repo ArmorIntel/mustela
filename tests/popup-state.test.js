@@ -13,6 +13,19 @@ test('defanged manual lookup shares canonical history keys and supported pivots'
   }
 });
 
+test('email manual lookup and history preserve local-part identity without pivots', () => {
+  const upper = getManualLookupState('First.Last@EVIL.TEST');
+  assert.equal(upper.ioc.type, 'email');
+  assert.equal(upper.ioc.normalized, 'First.Last@evil.test');
+  assert.deepEqual(upper.pivots, { virustotal: false, abuseipdb: false, shodan: false });
+  const lower = { type: 'email', normalized: 'first.last@evil.test' };
+  const history = [{ historyKey: 'email:First.Last@evil.test' }];
+  assert.equal(buildIocKey(upper.ioc), history[0].historyKey);
+  assert.equal(findSameIocHistory(history, [lower]), null);
+  assert.equal(mapCurrentIocsToHistory(history, [lower])[0].alreadyInvestigated, false);
+  assert.equal(findSameIocHistory(history, [upper.ioc]), history[0]);
+});
+
 test('buildIocKey normalizes casing and whitespace', () => {
   assert.equal(buildIocKey({ type: ' IP ', normalized: ' 8.8.8.8 ' }), 'ip:8.8.8.8');
   assert.equal(buildIocKey({ type: 'DOMAIN', normalized: ' Evil.Example ' }), 'domain:evil.example');
