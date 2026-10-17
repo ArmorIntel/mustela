@@ -1,4 +1,5 @@
 export const IOC_TYPES = {
+  EMAIL: 'email',
   IP: 'ip',
   DOMAIN: 'domain',
   URL: 'url',
@@ -9,12 +10,12 @@ export const IOC_TYPES = {
   ASN: 'asn'
 };
 
-const IPV4_CANDIDATE = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
+const IPV4_CANDIDATE = /\b(?:\d{1,3}(?:\.|\[\.\]|\(\.\))){3}\d{1,3}\b/g;
 const SUBNET_CANDIDATE = /\b(?:\d{1,3}\.){3}\d{1,3}\/(?:[0-9]|[12][0-9]|3[0-2])\b/g;
 const ASN_CANDIDATE = /\bAS(?:[1-9]\d{0,9})\b/gi;
-const URL_CANDIDATE = /\bhttps?:\/\/[^\s<>'"`]+/gi;
+const URL_CANDIDATE = /\b(?:https?|hxxps?)(?::|\[:\])\/\/[^\s<>'"`]+/gi;
 const HASH_CANDIDATE = /\b[a-fA-F0-9]{32}\b|\b[a-fA-F0-9]{40}\b|\b[a-fA-F0-9]{64}\b/g;
-const DOMAIN_CANDIDATE = /\b(?=.{1,253}\b)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+(?:[a-zA-Z]{2,63})\b/g;
+const DOMAIN_LABEL_CANDIDATE = /\b[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.|\[\.\]|\(\.\))/g;
 
 const DOMAIN_EXCLUSIONS = new Set(['microsoft.com', 'example.com', 'localhost']);
 const DOMAIN_TLD_EXCLUSIONS = new Set(['local', 'internal', 'exe', 'dll', 'bin', 'tmp', 'log', 'conf', 'ps1', 'bat', 'sh', 'js']);
@@ -29,6 +30,37 @@ export function isValidIpv4(value) {
     const n = Number(part);
     return n >= 0 && n <= 255;
   });
+}
+
+// Validate the whole literal before canonicalizing; no URL/DNS parser or network.
+function canonicalIpv6(value) {
+  if (value.length > 45 || !/^[0-9a-f:.]+$/i.test(value) || !value.includes(':')) return null;
+  let address = value.toLowerCase();
+  if (address.includes('.')) {
+    const tail = address.slice(address.lastIndexOf(':') + 1);
+    if (!/^(?:0|[1-9]\d{0,2})(?:\.(?:0|[1-9]\d{0,2})){3}$/.test(tail) || !isValidIpv4(tail)) return null;
+    const [a, b, c, d] = tail.split('.').map(Number);
+    address = `${address.slice(0, address.lastIndexOf(':') + 1)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const halves = address.split('::');
+  if (halves.length > 2) return null;
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const count = left.length + right.length;
+  if (halves.length === 1 ? count !== 8 : count >= 8) return null;
+  if (![...left, ...right].every((part) => /^[0-9a-f]{1,4}$/.test(part))) return null;
+  const groups = [...left, ...Array(8 - count).fill('0'), ...right].map((part) => Number.parseInt(part, 16).toString(16));
+  let bestStart = -1;
+  let bestLength = 1; // Never compress a single zero; retain the first tied run.
+  for (let start = 0; start < groups.length;) {
+    if (groups[start] !== '0') { start += 1; continue; }
+    let end = start;
+    while (end < groups.length && groups[end] === '0') end += 1;
+    if (end - start > bestLength) { bestStart = start; bestLength = end - start; }
+    start = end;
+  }
+  if (bestStart < 0) return groups.join(':');
+  return `${groups.slice(0, bestStart).join(':')}::${groups.slice(bestStart + bestLength).join(':')}`;
 }
 
 // Deliberately limited to these literal IPv4 ranges, not DNS, URLs or CIDRs.
@@ -61,13 +93,33 @@ export function isValidSubnet(value) {
   return Number.isInteger(p) && p >= 0 && p <= 32;
 }
 
+function refangDots(value) {
+  return value.replace(/\[\.\]|\(\.\)/g, '.');
+}
+
+function trimUrlPunctuation(value) {
+  let trimmed = value.replace(/[,.;]+$/g, '');
+  while (trimmed.endsWith(')') && (trimmed.match(/\)/g) || []).length > (trimmed.match(/\(/g) || []).length) {
+    trimmed = trimmed.slice(0, -1).replace(/[,.;]+$/g, '');
+  }
+  return trimmed;
+}
+
 export function normalizeIoc(raw, type) {
   const value = String(raw || '').trim();
   switch (type) {
+    case IOC_TYPES.EMAIL: {
+      const at = value.lastIndexOf('@');
+      return at < 0 ? value : value.slice(0, at + 1) + value.slice(at + 1).toLowerCase();
+    }
     case IOC_TYPES.URL:
-      return value.replace(/[),.;]+$/g, '');
+      // Refang only the scheme and authority, never path/query/fragment text.
+      return trimUrlPunctuation(value).replace(/^(https?|hxxps?)(?::|\[:\])\/\/((?:[^/?#@]*@)?)([^/?#:]+)(:\d+)?/i,
+        (_, scheme, userInfo, host, port = '') => `${scheme.toLowerCase().replace('xx', 'tt')}://${userInfo}${refangDots(host)}${port}`);
     case IOC_TYPES.DOMAIN:
-      return value.toLowerCase().replace(/^\.+|\.+$/g, '');
+      return refangDots(value).toLowerCase().replace(/^\.+|\.+$/g, '');
+    case IOC_TYPES.IP:
+      return canonicalIpv6(value) ?? refangDots(value);
     case IOC_TYPES.MD5:
     case IOC_TYPES.SHA1:
     case IOC_TYPES.SHA256:
@@ -87,10 +139,27 @@ export function detectHashType(value) {
   return null;
 }
 
-function pushUnique(results, item) {
-  if (!results.some((entry) => entry.type === item.type && entry.normalized === item.normalized && entry.index === item.index)) {
-    results.push(item);
+function* domainCandidates(text) {
+  // Find bounded labels once, retaining the last valid TLD in each contiguous
+  // chain. This is the same leftmost/greedy match as (LABEL DOT)+ TLD, without
+  // retrying every suffix when thousands of labels have no valid TLD.
+  // Invalid labels split chains, so a valid domain after one is still found.
+  const tld = /[a-zA-Z]{2,63}\b/y;
+  let start = -1;
+  let chainEnd = -1;
+  let matchEnd = -1;
+  for (const label of text.matchAll(DOMAIN_LABEL_CANDIDATE)) {
+    if (label.index !== chainEnd) {
+      if (matchEnd >= 0) yield Object.assign([text.slice(start, matchEnd)], { index: start });
+      start = label.index;
+      matchEnd = -1;
+    }
+    chainEnd = label.index + label[0].length;
+    tld.lastIndex = chainEnd;
+    const suffix = tld.exec(text);
+    if (suffix) matchEnd = chainEnd + suffix[0].length;
   }
+  if (matchEnd >= 0) yield Object.assign([text.slice(start, matchEnd)], { index: start });
 }
 
 function getDomainTld(value) {
@@ -154,14 +223,73 @@ export function parseIocsFromText(text, options = {}) {
   const results = [];
   if (!text) return results;
   const mode = resolveDetectionMode(options.mode);
+  // Byte occupancy preserves source-range precedence without pairwise scans.
+  const occupied = new Uint8Array(text.length);
+  const colonOccupied = new Uint8Array(text.length);
+  const emailOccupied = new Uint8Array(text.length);
+  const overlaps = (table, index, length) => {
+    for (let i = index; i < index + length; i++) if (table[i]) return true;
+    return false;
+  };
+  const pushUnique = (target, item) => {
+    if (overlaps(occupied, item.index, item.length)) return;
+    occupied.fill(1, item.index, item.index + item.length);
+    target.push(item);
+  };
+
+  // Reserve whole address-like tokens, including invalid or unsupported ones.
+  // Never promote their local identifiers or domain suffixes independently.
+  // Consume escaped characters together so an escaped quote cannot end the
+  // unsupported quoted local part and expose nested provider-compatible IOCs.
+  const emailTokens = [...text.matchAll(/"(?:\\[^\r\n]|[^"\\\r\n])*"@[^\s<>,;:]*|(?:\(\.\)|[^\s<>(),;:])+/g)]
+    .filter(([raw]) => raw.includes('@'));
+  for (const token of emailTokens) emailOccupied.fill(1, token.index, token.index + token[0].length);
+  const emails = [];
+  for (const token of emailTokens) {
+    const raw = token[0].replace(/\.+$/, '');
+    const parts = raw.split('@');
+    const [local, domain = ''] = parts;
+    const atom = /^[a-z0-9!#$%&'*+\-/=?^_`{|}~]+(?:\.[a-z0-9!#$%&'*+\-/=?^_`{|}~]+)*$/i;
+    const labels = domain.split('.');
+    if (parts.length !== 2 || !atom.test(local) || local.length > 64 || domain.length > 253
+      || labels.length < 2 || !labels.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label))) continue;
+    emails.push({ type: IOC_TYPES.EMAIL, raw, normalized: normalizeIoc(raw, IOC_TYPES.EMAIL), index: token.index, length: raw.length, confidence: 0.95 });
+  }
 
   for (const match of text.matchAll(URL_CANDIDATE)) {
-    const raw = match[0];
+    const raw = trimUrlPunctuation(match[0]);
     const normalized = normalizeIoc(raw, IOC_TYPES.URL);
     pushUnique(results, { type: IOC_TYPES.URL, raw, normalized, index: match.index ?? 0, length: raw.length, confidence: scoreDetectionConfidence(IOC_TYPES.URL, normalized) });
   }
 
+  for (const email of emails) pushUnique(results, email);
+
+  // Consume maximal colon-bearing tokens, including invalid/unsupported forms.
+  // Reserving their ranges prevents accepting a suffix or a nested IPv4/CIDR.
+  // Log labels/ports are not IPv6 prefixes. For dotted tokens, reserve only
+  // compressed forms or a hexadecimal group prefix before the first IPv4 octet.
+  const colonTokens = [...text.matchAll(/[a-z0-9_.:%/\-]+/gi)].filter(([raw]) => {
+    if (raw.indexOf(':') === raw.lastIndexOf(':')) return false;
+    if (!raw.includes('.') || raw.includes('::')) return true;
+    const prefix = raw.slice(0, raw.lastIndexOf(':', raw.indexOf('.')) + 1);
+    return /^[0-9a-f:]+:$/i.test(prefix);
+  });
+  for (const token of colonTokens) colonOccupied.fill(1, token.index, token.index + token[0].length);
+  const insideColonToken = (match) => !!colonOccupied[match.index];
+  for (const token of colonTokens) {
+    const raw = token[0].replace(/\.+$/, '');
+    const normalized = canonicalIpv6(raw);
+    const before = text.slice(Math.max(0, token.index - 3), token.index);
+    const end = token.index + token[0].length;
+    const after = text.slice(end, end + 3);
+    if (!normalized || /^\][/%]/.test(after)
+      || /(?:\[:\]|\[\.\]|\(\.\))$/.test(before)
+      || /^(?:\[:\]|\[\.\]|\(\.\))/.test(after)) continue;
+    pushUnique(results, { type: IOC_TYPES.IP, raw, normalized, index: token.index, length: raw.length, confidence: scoreDetectionConfidence(IOC_TYPES.IP, normalized) });
+  }
+
   for (const match of text.matchAll(SUBNET_CANDIDATE)) {
+    if (insideColonToken(match)) continue;
     const raw = match[0];
     if (!isValidSubnet(raw)) continue;
     const normalized = normalizeIoc(raw, IOC_TYPES.SUBNET);
@@ -169,10 +297,10 @@ export function parseIocsFromText(text, options = {}) {
   }
 
   for (const match of text.matchAll(IPV4_CANDIDATE)) {
+    if (insideColonToken(match)) continue;
     const raw = match[0];
-    if (!isValidIpv4(raw)) continue;
-    const insideSubnet = results.some((entry) => entry.type === IOC_TYPES.SUBNET && (match.index ?? 0) >= entry.index && (match.index ?? 0) < entry.index + entry.length);
-    if (insideSubnet) continue;
+    if (!isValidIpv4(normalizeIoc(raw, IOC_TYPES.IP))) continue;
+    if (occupied[match.index]) continue;
     const normalized = normalizeIoc(raw, IOC_TYPES.IP);
     pushUnique(results, { type: IOC_TYPES.IP, raw, normalized, index: match.index ?? 0, length: raw.length, confidence: scoreDetectionConfidence(IOC_TYPES.IP, normalized) });
   }
@@ -191,16 +319,17 @@ export function parseIocsFromText(text, options = {}) {
     pushUnique(results, { type, raw, normalized, index: match.index ?? 0, length: raw.length, confidence: scoreDetectionConfidence(type, normalized) });
   }
 
-  for (const match of text.matchAll(DOMAIN_CANDIDATE)) {
+  for (const match of domainCandidates(text)) {
     const raw = match[0];
     const normalized = normalizeIoc(raw, IOC_TYPES.DOMAIN);
-    const insideUrl = results.some((entry) => entry.type === IOC_TYPES.URL && (match.index ?? 0) >= entry.index && (match.index ?? 0) < entry.index + entry.length);
-    if (insideUrl) continue;
-    if (isLikelyExcludedDomain(normalized, text, match.index ?? 0, { mode })) continue;
+    if (occupied[match.index]) continue;
+    if (normalized.length > 253 || isLikelyExcludedDomain(raw, text, match.index ?? 0, { mode })) continue;
     pushUnique(results, { type: IOC_TYPES.DOMAIN, raw, normalized, index: match.index ?? 0, length: raw.length, confidence: scoreDetectionConfidence(IOC_TYPES.DOMAIN, normalized) });
   }
 
-  return results.sort((a, b) => a.index - b.index);
+  return results.filter((ioc) => [IOC_TYPES.EMAIL, IOC_TYPES.URL].includes(ioc.type)
+    || !overlaps(emailOccupied, ioc.index, ioc.length))
+    .sort((a, b) => a.index - b.index);
 }
 
 export function detectSingleIoc(text, options = {}) {

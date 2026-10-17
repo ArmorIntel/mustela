@@ -40,6 +40,9 @@
     }
     button:hover { transform: translateY(-1px) scale(1.025); }
     button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .pause-action { width: auto; max-width: 100%; height: auto; min-height: 36px; padding: 9px 14px; font-size: 12px; font-weight: 700; }
+    .pause-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .pause-action[hidden] { display: none; }
     button svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2.15; stroke-linecap: round; stroke-linejoin: round; }
     .power-off { color: rgba(190, 24, 93, .92); }
     .power-on { color: rgba(22, 101, 52, .92); }
@@ -117,6 +120,14 @@
       </button>
     </section>
 
+    <section class="panel" aria-label="Global activation">
+      <button id="globalPauseBtn" class="pause-action" type="button" aria-label="Mustela active on all pages" aria-describedby="pauseHelp pauseStatus" aria-pressed="false" disabled>Checking global state…</button>
+      <p id="pauseHelp" class="muted">OFF removes annotations, closes investigation panels and blocks new sends on all pages. Data already sent cannot be recalled. ON keeps your existing preferences and never replays investigations.</p>
+      <div id="pauseStatus" role="status" aria-live="polite">Checking global state…</div>
+      <button id="pauseRetryBtn" class="pause-action" type="button" hidden disabled>Retry global change</button>
+      <p class="muted">Assign or resolve a conflicting Chrome-only pause shortcut at <a href="chrome://extensions/shortcuts" id="pauseShortcuts">chrome://extensions/shortcuts</a>. The button remains available without a shortcut. ON means no global pause, not highlighting on every URL.</p>
+    </section>
+
     <section class="panel">
       <div class="summary-row">
         <h2>Current page</h2>
@@ -147,6 +158,9 @@
           <button id="manualShodanBtn" class="manual-action" type="button">Shodan</button>
         </div>
         <div id="manualHint" class="muted">Paste a single IOC to investigate it instantly.</div>
+        <button id="manualKqlBtn" class="manual-action" type="button" aria-describedby="manualKqlHelp manualKqlStatus" disabled>Copy Defender KQL</button>
+        <div id="manualKqlHelp" class="muted">Microsoft Defender XDR Advanced Hunting, last 7 days. Requires Defender for Endpoint telemetry in DeviceNetworkEvents / DeviceFileEvents. Copies locally; does not run a query.</div>
+        <div id="manualKqlStatus" class="muted" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>
     </section>
 

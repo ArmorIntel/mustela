@@ -2,10 +2,152 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildThreatSummary, detectSingleIoc, isValidIpv4, isValidSubnet, normalizeIoc, parseIocsFromText, summarizeProviderVerdict, IOC_TYPES } from '../src/shared/ioc.js';
 
+test('email detection preserves local case, exact ranges and excludes nested identifiers', () => {
+  for (const mode of ['balanced', 'strict']) {
+    const raws = ['analyst+tag@evil.test', 'First.Last@EVIL.TEST', 'AS123@sub.evil.test', 'd41d8cd98f00b204e9800998ecf8427e@evil.test', "a!#$%&'*+-/=?^_`{|}~@sub.evil.test", 'analyst+tag@evil.test'];
+    const text = raws.join(' ; ');
+    const results = parseIocsFromText(text, { mode });
+    assert.equal(results.length, raws.length);
+    results.forEach((ioc, index) => {
+      const raw = raws[index];
+      assert.equal(ioc.type, 'email');
+      assert.equal(ioc.raw, raw);
+      assert.equal(ioc.normalized, raw.slice(0, raw.indexOf('@') + 1) + raw.slice(raw.indexOf('@') + 1).toLowerCase());
+      assert.equal(ioc.index, text.indexOf(raw, index ? results[index - 1].index + results[index - 1].length : 0));
+      assert.equal(ioc.length, raw.length);
+    });
+    for (const raw of ['a@@evil.test', 'a..b@sub.evil.test', '@sub.evil.test', '.a@evil.test', 'a.@evil.test', 'éa@sub.evil.test', 'a@évil.test', '"a b"@sub.evil.test', '"First.Last"@evil.test', 'a@evil-.test', 'a@evil[.]test', 'a@evil(.)sub.test', `${'a'.repeat(65)}@evil.test`]) {
+      assert.deepEqual(parseIocsFromText(raw, { mode }), [], raw);
+      assert.deepEqual(parseIocsFromText(`${raw} standalone.test`, { mode }).map((ioc) => ioc.normalized), ['standalone.test'], raw);
+    }
+    assert.equal(parseIocsFromText('https://evil.test/a@evil.test')[0].type, 'url');
+    assert.equal(normalizeIoc('First.Last@EVIL.TEST', IOC_TYPES.EMAIL), 'First.Last@evil.test');
+  }
+});
+
+for (const mode of ['balanced', 'strict']) {
+  test(`unsupported quoted email tokens reserve escaped quotes in ${mode} mode`, () => {
+    const addresses = [
+      String.raw`"foo.test\" bar"@evil.test`,
+      String.raw`"foo.test\\\" bar"@evil.test`,
+      String.raw`"foo.test\\"@evil.test`,
+      String.raw`"foo.test\" AS123 8.8.8.8"@evil.test`
+    ];
+    for (const address of addresses) {
+      assert.deepEqual(parseIocsFromText(address, { mode }), [], address);
+      const text = `${address} standalone.test analyst+tag@EVIL.TEST`;
+      const results = parseIocsFromText(text, { mode });
+      assert.deepEqual(results.map(({ type, normalized }) => ({ type, normalized })), [
+        { type: 'domain', normalized: 'standalone.test' },
+        { type: 'email', normalized: 'analyst+tag@evil.test' }
+      ], address);
+      for (const result of results) {
+        assert.equal(result.index, text.indexOf(result.raw));
+        assert.equal(text.slice(result.index, result.index + result.length), result.raw);
+      }
+    }
+  });
+}
+
+test('IPv6 uses the IP type, canonical values and exact original source ranges', () => {
+  const cases = [
+    ['2001:0DB8:0000:0000:0000:0000:0000:0001', '2001:db8::1'],
+    ['2001:db8::1', '2001:db8::1'], ['::1', '::1'], ['::', '::'],
+    ['::ffff:192.0.2.1', '::ffff:c000:201'],
+    ['1:2:3:4:5:6:192.0.2.1', '1:2:3:4:5:6:c000:201'],
+    ['2001:0:0:1:0:0:1:1', '2001::1:0:0:1:1'],
+    ['2001:0:1:0:0:0:1:1', '2001:0:1::1:1'],
+    ['2001:db8:0:1:2:3:4:5', '2001:db8:0:1:2:3:4:5']
+  ];
+  for (const mode of ['balanced', 'strict']) {
+    for (const [raw, normalized] of cases) {
+      for (const text of [raw, `Before [${raw}], after.`, `(${raw}).`]) {
+        const results = parseIocsFromText(text, { mode });
+        assert.equal(results.length, 1, text);
+        assert.deepEqual({ ...results[0], confidence: undefined }, {
+          type: 'ip', raw, normalized, index: text.indexOf(raw), length: raw.length, confidence: undefined
+        });
+        assert.equal(normalizeIoc(raw, IOC_TYPES.IP), normalized);
+      }
+    }
+  }
+  const repeated = parseIocsFromText(`${cases[0][0]} 2001:db8::1`);
+  assert.equal(repeated.length, 2);
+  assert.equal(repeated[0].normalized, repeated[1].normalized);
+});
+
+test('IPv6 rejects whole malformed and unsupported tokens without nested IPv4 fragments', () => {
+  for (const raw of [
+    '2001::db8::1', '12345::1', '12:34:56', 'aa:bb:cc:dd:ee:ff',
+    '1:2:3:4:5:6:7:8:9', '1:2:3:4:5:6:7', '1:2:3:4:5:6:7:8::',
+    ':::1', '2001:db8::g', 'x2001:db8::1', '2001:db8::1x',
+    '::ffff:999.0.2.1', '::ffff:192.00.2.1', '::ffff:192.0.2.1:2',
+    '::ffff:192.0.2.1/120', '2001:db8::1/64', 'fe80::1%eth0',
+    '[2001:db8::1]/64', '[fe80::1%eth0]', '2001[:]db8::1', '::ffff:192[.]0[.]2[.]1', `${'abcd:'.repeat(10000)}1`
+  ]) {
+    assert.deepEqual(parseIocsFromText(raw), [], raw.slice(0, 100));
+  }
+  const results = parseIocsFromText('https://[2001:db8::1]/a ::ffff:192.0.2.1 d41d8cd98f00b204e9800998ecf8427e');
+  assert.deepEqual(results.map((r) => r.type), ['url', 'ip', 'md5']);
+  assert.equal(results[0].raw, 'https://[2001:db8::1]/a');
+});
+
+test('ordinary colon labels retain IPv4 and subnet detection', () => {
+  assert.equal(detectSingleIoc('IP:8.8.8.8').normalized, '8.8.8.8');
+  assert.equal(detectSingleIoc('network:8.8.8.0/24').type, 'subnet');
+  for (const mode of ['balanced', 'strict']) {
+    for (const [text, values, type] of [
+      ['IP:192.0.2.1:443', ['192.0.2.1'], 'ip'],
+      ['src:192.0.2.1:dst:198.51.100.2', ['192.0.2.1', '198.51.100.2'], 'ip'],
+      ['network:192.0.2.0/24:port:443', ['192.0.2.0/24'], 'subnet']
+    ]) {
+      const results = parseIocsFromText(text, { mode });
+      assert.deepEqual(results.map((r) => r.normalized), values, text);
+      for (const result of results) {
+        assert.equal(result.type, type);
+        assert.equal(result.index, text.indexOf(result.raw));
+        assert.equal(text.slice(result.index, result.index + result.length), result.raw);
+      }
+    }
+  }
+});
+
 test('normalizeIoc trims URL punctuation and lowercases domains/hashes', () => {
   assert.equal(normalizeIoc('https://example.com/path);', IOC_TYPES.URL), 'https://example.com/path');
   assert.equal(normalizeIoc('Example.COM', IOC_TYPES.DOMAIN), 'example.com');
   assert.equal(normalizeIoc('ABCDEF0123456789ABCDEF0123456789', IOC_TYPES.MD5), 'abcdef0123456789abcdef0123456789');
+});
+
+test('defanged separators preserve original ranges and URL precedence', () => {
+  for (const scheme of ['http', 'https', 'hxxp', 'HXXPS']) {
+    for (const colon of [':', '[:]']) {
+      for (const dot of ['.', '[.]', '(.)']) {
+        for (const host of [`evil${dot}test`, `8${dot}8${dot}8${dot}8`]) {
+          const raw = `${scheme}${colon}//${host}/a[.]b?q=(.)`;
+          const text = `Before (${raw}); after evil[.]test and 8[.]8(.)8[.]8.`;
+          const results = parseIocsFromText(text);
+          assert.deepEqual(results.map((r) => r.type), ['url', 'domain', 'ip']);
+          assert.equal(results[0].raw, raw);
+          assert.equal(results[0].normalized, `${scheme.toLowerCase().replace('xx', 'tt')}://${host.replace(/\[\.\]|\(\.\)/g, '.')}/a[.]b?q=(.)`);
+          for (const result of results) {
+            assert.equal(text.slice(result.index, result.index + result.length), result.raw);
+            assert.equal(result.index, result.type === 'url' ? text.indexOf(raw) : text.lastIndexOf(result.raw));
+          }
+          assert.equal(detectSingleIoc(raw).normalized, results[0].normalized);
+        }
+      }
+    }
+  }
+});
+
+test('defanged domains retain exclusions and IP validation in both detection modes', () => {
+  for (const mode of ['balanced', 'strict']) {
+    const results = parseIocsFromText('evil[.]test evil(.)test 8[.]8(.)8[.]8 999[.]8[.]8[.]8 microsoft[.]com malware(.)exe printer[.]local admin@evil[.]org', { mode });
+    assert.deepEqual(results.map((r) => r.normalized), ['evil.test', 'evil.test', '8.8.8.8']);
+  }
+  assert.equal(parseIocsFromText('google[.]com', { mode: 'strict' }).length, 0);
+  assert.equal(parseIocsFromText('import from cdn[.]test', { mode: 'strict' }).length, 0);
+  assert.equal(normalizeIoc('HXXPS[:]//evil[.]test/a[.]b?q=(.)', 'url'), 'https://evil.test/a[.]b?q=(.)');
 });
 
 test('IPv4 and subnet validation reject invalid values', () => {

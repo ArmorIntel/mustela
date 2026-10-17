@@ -17,12 +17,30 @@ This page explains local storage, outgoing requests and their triggers, and what
 
 The extension may process:
 
-- IOC visible on the current page or entered for investigation: IPv4, domains, URLs, MD5/SHA1/SHA256, and subnet/ASN where supported.
+- IOC visible on the current page or entered for investigation: IPv4 and IPv6, ASCII email addresses, domains, URLs, MD5/SHA1/SHA256, and subnet/ASN where supported.
 - Page URL and title, when available, for investigation context and local history. These may also enter Analyst Assist prompts; the extension does not send the full page to the LLM.
 - Provider configuration: enabled flags and API keys; MISP base URL and default event ID.
 - Analyst Assist configuration: enabled flag, base URL, API key, and model name.
 - Investigation results, provider summaries/verdicts/confidence or errors, aggregate scores, tags, recommendations, and LLM responses.
 - Recent investigation history, occurrence counts, pinning metadata, and free-form analyst notes. Notes are not included in the LLM prompts described below; a comment explicitly submitted with **Add to MISP** is sent to MISP.
+
+### Defanged investigation values
+
+Supported defanged URLs, domains and IPv4 keep their source spelling and positions on the page. The investigation value refangs `hxxp`/`hxxps`, scheme `[:]`, and host `[.]`/`(.)` separators only; path/query text is not refanged. For example, `hxxps[:]//evil[.]test/a[.]b` becomes `https://evil.test/a[.]b`. Scanning is local and neither activates a target link nor requests the IOC target/provider. Existing investigation actions use the normalized value in the panel, cache, local history, configured provider/Analyst Assist flows and supported explicit pivots. Those actions can transmit that value under the existing rules below; this is not a promise to keep refanged values local. No recipient or permission is added.
+
+### IPv6 investigation values
+
+Full/compressed IPv6 and valid IPv4 tails use the existing `ip` type. Source spelling and offsets remain local; normalized investigation values are lowercase, compress the longest zero run (first tie, never a single zero), and convert dotted tails to hexadecimal (`::ffff:192.0.2.1` → `::ffff:c000:201`). Surrounding brackets are not part of a standalone IP; HTTP(S) URLs with bracketed IPv6 stay single URL indicators. IPv6 CIDR, zone IDs and refang are not supported.
+
+Detection/highlighting makes no target or provider request and never automatically navigates to the address. Existing explicit investigation, copy/export, local history, configured provider/MISP requests, Analyst Assist and website pivots use the normalized value with the same recipients and triggers documented below. MISP IP search uses `ip-src`/`ip-dst`; explicit adds use `ip-dst`. Third-party IPv6 support varies; errors/timeouts do not establish a clean verdict or prevent other results. The protected IPv4 policy does not classify IPv6, including loopback, private and IPv4-mapped literals: check sensitivity and recipients before investigating. No permissions, telemetry or credentials requirement are added.
+
+### Email investigation values
+
+ASCII, non-defanged email addresses are distinct `email` IOC, not their domains. The dot-atom local part retains its case; only the DNS domain is lowercased. Source spelling/positions are preserved for highlighting. Cache, local history and notes distinguish local-part case. Unsupported Unicode/IDN, quoted local parts and malformed address-like tokens do not promote nested indicators. Editable fields are not scanned; no registration capture or account collection is added.
+
+An email address may identify a person. Detection/highlighting are local and do not request any provider or navigate; excluded pages do not scan. Tab detection state is held in memory-only `chrome.storage.session` until tab closure or navigation; investigation cache/history remain in `chrome.storage.local`, not synced. Explicit copy/export includes the full address and may disclose it wherever you paste/share. No compatible provider is added: email lookups, reruns and pivots cannot send it to VirusTotal, AbuseIPDB, Shodan or MISP, and Add to MISP is unavailable. No domain extraction pivot or mailto action is provided. Without keys and with Analyst Assist disabled, the investigation remains local and useful without claiming reputation.
+
+Email is eligible for the existing optional Analyst Assist flows: when enabled with endpoint, key and model, an uncached investigation automatically sends the full normalized email/type and available page URL/title to that endpoint. An explicit correlation request can include selected email history and page context under the existing selection rules. LLM errors/timeouts remain non-blocking for investigation and may already have transmitted data. Detection alone does not trigger either flow. Local-first does not mean zero sending; review potentially personal data before enabling these options. No recipient, permission or telemetry is added.
 
 ## What stays local
 
@@ -35,11 +53,33 @@ The following are stored in `chrome.storage.local` in the browser profile:
 - A manual TLP 2.0 sharing label per history entry (IOC type + normalized value), shared across pages investigating the same IOC. New/legacy entries are unclassified (`null`), never CLEAR by default. Unknown stored values are treated as unclassified. Clearing history or eviction beyond 50 entries removes the label and note locally; it does not delete exports or remote MISP attributes.
 - Cached investigation results, including compact provider results and the investigation's LLM summary, action, and raw response text when present.
 - Summary/action text copied into history, with its LLM or built-in source recorded.
-- Last detected IOC for tab state.
+
+IOC detected on the current tab, with page URL/title, are stored in **`chrome.storage.session`** (memory only), cleared on tab closure or navigation. Each tab has its own key; URL/title are stored once per tab and unchanged lists are not rewritten. This state survives service-worker restarts, but not browser sessions. Startup/update deletes the legacy `mustela_last_detected` key from `chrome.storage.local`; this does not clear investigation history or cache.
 
 This storage remembers configuration and investigations and reduces repeated calls. It is not a promise of non-transmission: configured credentials authenticate requests, and some locally held context is used in prompts. The correlation response is returned to the UI; that handler does not save it to the investigation cache or history. Free-form analyst notes stay local in the examined LLM flows.
 
+## Message security boundary
+
+API keys are never transmitted to visited pages or their content scripts through extension messages. Content scripts request only `highlightEnabled` and `detectionMode`; settings-change broadcasts to tabs contain exactly those two fields, not provider credentials or API configuration URLs.
+
+The background checks the Chrome-supplied sender ID and URL before processing messages. This extension's own pages (including the welcome/settings page in an extension tab) can manage settings, bulk history, cache, configuration tests, and correlation. HTTP(S) content scripts are limited to reporting detections, reading pause/display/page-disabled state, looking up IOC and opening pivots, and the panel's single-entry history, note, TLP, and explicit MISP actions. Other senders and unauthorized messages receive an explicit failure before storage, network, or navigation work. A content script cannot save settings, change global pause, or clear history through this message interface. These checks do not remove the panel's documented investigation disclosures or protect against a compromised extension page/browser profile.
+
 ## What leaves the browser
+
+### Global transmission pause
+
+The Chrome-only `toggle-global-pause` command uses the same serialized, durable transition as the popup, including without API keys. Assign it at `chrome://extensions/shortcuts`; no default or system-global shortcut is imposed. The toolbar badge and action title reflect confirmed ON/OFF after successful saves and startup restoration. ON means no global pause, not permission to highlight every URL. Command failures keep the last confirmed state and expose a retryable error to the popup (in worker memory only, cleared on success/restart). The command, badge, title and shortcut-settings link add no permissions, recipients or outgoing data.
+
+The background owns a global pause state stored separately as `mustela_paused` in `chrome.storage.local`; absence means ON (`paused: false`). It is independent of highlighting, URL rules, keys, and provider/Analyst Assist preferences. The popup's named global ON/OFF button is separate from URL exclusion, keyboard-accessible, and synchronized to this confirmed state. Failed saves show an error and retry, not an OFF success.
+
+Confirmed OFF is propagated to loaded pages: highlights and detection indicators are removed, panels close, and DOM changes do not restart scanning. Content initialization fails closed until the background confirms ON, including new/reloaded pages and worker restarts. Old panel opens or lookup replies cannot reopen or repopulate panels while paused; an OFF/ON cycle also invalidates pending replies. An unavailable or non-scriptable tab does not prevent notification of the others.
+
+- `GET_PAUSE_STATE` returns the last confirmed state. `SET_PAUSE_STATE` accepts `payload: { paused: boolean }`, serializes transitions, and confirms `{ ok: true, data: { paused } }` only after storage succeeds. A failed write returns an explicit error asking for a retry; no OFF success is announced. Ordinary settings saves cannot change pause.
+- After OFF is confirmed, `LOOKUP_IOC` (including reruns/cache paths), `OPEN_EXTERNAL_PROVIDER`, `CORRELATE_IOCS`, `ADD_IOC_TO_MISP`, `TEST_API_KEY`, and investigation/pivot context menus are refused before any new API call or external navigation. This applies with or without keys, to MISP and local LLM endpoints too, and to already-open interfaces. Message refusals have `ok: false`, `code: 'MUSTELA_PAUSED'`, and an explanation; blocked menus notify the originating tab with `MUSTELA_ACTION_BLOCKED`.
+- Each new provider/LLM call and pivot is guarded. If pause is confirmed during an outstanding request, later providers and the automatic summary do not start. Shodan key validation also checks before its second (host-probe) request. Provider errors/timeouts do not bypass pause.
+- ON preserves previous preferences and existing policies; detection resumes only on permitted pages with highlighting enabled. It never reopens a panel, replays blocked actions, or restarts interrupted investigations. A fresh analyst action is required, even if ON was confirmed before an old response arrived.
+
+Pause does **not** cancel or recall requests already started, promise remote deletion, purge local data, or stop autonomous traffic from a website already opened. Local history, cache, keys, URL exclusions and highlighting preferences are retained, not erased or overwritten. No recipient, Chrome permission, telemetry, or cloud storage is added. The operations below describe ON behavior, subject to this pause and the protected IPv4 policy.
 
 ### Protected IPv4 policy
 
@@ -72,6 +112,12 @@ Paths below are relative to the selected instance/endpoint base URL where applic
 | Manual external pivot | Destination provider website | Normal browser navigation to the pivot URL | IOC embedded in destination URL | Normal browser/site authentication, if any; no extension API key required | Opening an external pivot |
 
 MISP uses `POST` for both searching and adding: **POST does not always mean a write**. Lookup searches existing attributes; only the dedicated add action creates an attribute. MISP supports IP, domain, URL, MD5, SHA1, and SHA256, not ASN/subnet. Its label as an internal provider does not keep data inside the browser: requests go to the chosen instance.
+
+### Defender query clipboard
+
+**Copy Defender KQL** in popup manual lookup generates a deterministic query locally and writes it to the system clipboard only on an explicit click or keyboard activation. This action does not call providers or Microsoft, open tabs, execute a query, collect the page URL/title, or create investigation/history/cache/note records, including on sensitive pages. It works without API keys or Analyst Assist and while transmissions are paused; it adds no Chrome permissions.
+
+The clipboard contains the normalized IOC inside a Defender XDR query and may be accessible to other applications. The analyst chooses where to paste and execute it; any subsequent disclosure or execution is outside this copy action. Other investigation and pivot actions still make the outgoing requests described above.
 
 ### Manual TLP labels and exports
 

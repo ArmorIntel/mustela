@@ -39,6 +39,8 @@ Small, focused PRs are preferred over large ones.
 
 ## Tests
 
+On Debian/Ubuntu, install `xvfb` and `xdotool` for the Linux E2E suite (`sudo apt-get install xvfb xdotool`), then prepare Chromium with `npx playwright install chromium`. Shortcut E2E assigns a key through Chrome's settings and delivers native X11 key events: Playwright/CDP key events alone do not invoke extension accelerators. Run those tests on an isolated display (the xvfb command below), not alongside interactive windows.
+
 ```bash
 npm test                # Node test runner: parsing, providers, storage, popup state, smoke wiring
 npm run test:e2e        # Playwright E2E (requires display)

@@ -68,7 +68,8 @@ function compactHistoryIoc(ioc) {
 
 export function buildHistoryKey(entry) {
   const type = String(entry?.ioc?.type || entry?.type || '').trim();
-  const normalized = String(entry?.ioc?.normalized || entry?.normalized || '').trim().toLowerCase();
+  const value = String(entry?.ioc?.normalized || entry?.normalized || '').trim();
+  const normalized = type === 'email' ? value : value.toLowerCase();
   return type && normalized ? `${type}:${normalized}` : '';
 }
 
@@ -167,16 +168,35 @@ export async function getSettings() {
   };
 }
 
-export async function saveSettings(settings) {
-  const sanitized = {
-    ...DEFAULT_SETTINGS,
-    ...(settings || {}),
-    detectionMode: settings?.detectionMode === 'strict' ? 'strict' : 'balanced',
-    providers: { ...DEFAULT_SETTINGS.providers, ...((settings || {}).providers || {}) },
-    analystAssist: { ...DEFAULT_SETTINGS.analystAssist, ...((settings || {}).analystAssist || {}) }
-  };
-  await getStorageArea().set({ [SETTINGS_KEY]: sanitized });
-  return sanitized;
+// Pause has its own key and is never accepted through a stale settings snapshot.
+export async function getPauseState() {
+  const data = await getStorageArea().get('mustela_paused');
+  return { paused: data.mustela_paused === true };
+}
+
+export async function savePauseState(paused) {
+  await getStorageArea().set({ mustela_paused: paused });
+}
+
+let settingsWrite = Promise.resolve();
+export function saveSettings(settings) {
+  const result = settingsWrite.then(async () => {
+    const current = await getSettings();
+    const { paused, ...patch } = settings || {};
+    const sanitized = {
+      ...current,
+      ...patch,
+      detectionMode: (patch.detectionMode ?? current.detectionMode) === 'strict' ? 'strict' : 'balanced',
+      providers: Object.fromEntries(Object.entries(current.providers).map(([id, config]) => [
+        id, { ...config, ...(patch.providers?.[id] || {}) }
+      ])),
+      analystAssist: { ...current.analystAssist, ...(patch.analystAssist || {}) }
+    };
+    await getStorageArea().set({ [SETTINGS_KEY]: sanitized });
+    return sanitized;
+  });
+  settingsWrite = result.catch(() => undefined);
+  return result;
 }
 
 export async function getHistory() {
@@ -301,17 +321,53 @@ export async function clearCache() {
   await getStorageArea().set({ [CACHE_KEY]: {} });
 }
 
-export async function saveDetectedForTab(tabId, detected) {
-  const data = await getStorageArea().get(DETECTED_KEY);
-  const current = data[DETECTED_KEY] || {};
-  current[String(tabId)] = detected;
-  await getStorageArea().set({ [DETECTED_KEY]: current });
+const detectedQueues = new Map();
+const detectedKey = (tabId) => `mustela_detected_tab_${tabId}`;
+
+// Serialize each tab independently, including cleanup, without retaining its IOC in memory.
+function withDetectedTab(tabId, operation) {
+  const previous = detectedQueues.get(tabId) || Promise.resolve();
+  const pending = previous.catch(() => undefined).then(operation);
+  detectedQueues.set(tabId, pending);
+  const cleanup = () => {
+    if (detectedQueues.get(tabId) === pending) detectedQueues.delete(tabId);
+  };
+  pending.then(cleanup, cleanup);
+  return pending;
 }
 
-export async function getDetectedForTab(tabId) {
-  const data = await getStorageArea().get(DETECTED_KEY);
-  const current = data[DETECTED_KEY] || {};
-  return current[String(tabId)] || [];
+export function saveDetectedForTab(tabId, detected) {
+  const sourceContext = detected.find((ioc) => ioc.sourceContext)?.sourceContext;
+  const record = {
+    iocs: detected.map(({ sourceContext, ...ioc }) => ioc),
+    ...(sourceContext ? { sourceContext: { pageUrl: sourceContext.pageUrl, pageTitle: sourceContext.pageTitle } } : {})
+  };
+  return withDetectedTab(tabId, async () => {
+    const key = detectedKey(tabId);
+    const data = await chrome.storage.session.get(key);
+    if (JSON.stringify(data[key] || { iocs: [] }) === JSON.stringify(record)) return;
+    await chrome.storage.session.set({ [key]: record });
+  });
+}
+
+export function getDetectedForTab(tabId) {
+  return withDetectedTab(tabId, async () => {
+    const key = detectedKey(tabId);
+    const data = await chrome.storage.session.get(key);
+    const record = data[key];
+    return (record?.iocs || []).map((ioc) => ({
+      ...ioc,
+      ...(record.sourceContext ? { sourceContext: { ...record.sourceContext } } : {})
+    }));
+  });
+}
+
+export function clearDetectedForTab(tabId) {
+  return withDetectedTab(tabId, () => chrome.storage.session.remove(detectedKey(tabId)));
+}
+
+export async function removeLegacyDetected() {
+  await getStorageArea().remove(DETECTED_KEY);
 }
 
 export async function getDisabledPages() {

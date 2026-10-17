@@ -1,9 +1,72 @@
 import { buildThreatSummary, detectSingleIoc, isProtectedIoc, PUBLIC_LOOKUP_BLOCK_REASON, PROTECTED_IPV4_EXPLANATION, summarizeProviderVerdict } from '../shared/ioc.js';
 import { generateCorrelationAnalysis, generateInvestigationSummary, validateOpenAiCompatibleConfig } from '../integrations/assistants.js';
 import { addIocToMisp, isProviderSupportedForIoc, PROVIDERS } from '../providers/providers.js';
-import { addHistory, clearCache, clearDisabledPages, clearHistory, getCachedResult, getDetectedForTab, getHistory, getHistoryEntry, getSettings, isPageDisabled, saveDetectedForTab, saveHistoryNote, saveHistoryTlp, saveSettings, setCachedResult, setPageDisabled, toggleHistoryPin } from '../storage/storage.js';
+import { addHistory, clearCache, clearDetectedForTab, clearDisabledPages, clearHistory, getCachedResult, getDetectedForTab, getHistory, getHistoryEntry, getSettings, isPageDisabled, removeLegacyDetected, saveDetectedForTab, saveHistoryNote, saveHistoryTlp, saveSettings, setCachedResult, setPageDisabled, toggleHistoryPin } from '../storage/storage.js';
+
+import { createTransmissionGate, pauseFailure } from './pause.js';
+
+const transmissions = createTransmissionGate();
+let transitionError = '';
+
+async function updateAction(state) {
+  if (!chrome.action) return;
+  await chrome.action.setBadgeText({ text: state.paused ? 'OFF' : 'ON' });
+  await chrome.action.setTitle({ title: state.paused
+    ? 'Mustela OFF — globally paused'
+    : 'Mustela ON — not globally paused; page preferences apply' });
+}
+
+async function notifyPause(state) {
+  const notification = { type: 'PAUSE_STATE_UPDATED', payload: state };
+  try {
+    const tabs = await chrome.tabs.query({});
+    await Promise.allSettled(tabs.filter((tab) => typeof tab.id === 'number')
+      .map((tab) => chrome.tabs.sendMessage(tab.id, notification)));
+  } catch {}
+  try { await chrome.runtime.sendMessage(notification); } catch {}
+}
+
+// Serialize the toggle read, durable transition and UI publication together.
+// Startup never publishes an assumed ON before reading durable state.
+let pauseTransition = chrome.action
+  ? transmissions.getState().then(updateAction).catch(() => undefined)
+  : Promise.resolve();
+function changePause(paused, toggle = false) {
+  const result = pauseTransition.then(async () => {
+    try {
+      const target = toggle ? !(await transmissions.getState()).paused : paused;
+      const state = await transmissions.setState(target);
+      transitionError = '';
+      await updateAction(state);
+      await notifyPause(state);
+      return { ok: true, data: state };
+    } catch (error) {
+      transitionError = pauseFailure(error).error;
+      // Wake popups without announcing a false state change to pages.
+      try { await chrome.runtime.sendMessage({ type: 'PAUSE_CHANGE_FAILED' }); } catch {}
+      throw error;
+    }
+  });
+  pauseTransition = result.catch(() => undefined);
+  return result;
+}
+
+function handlePauseCommand(command) {
+  if (command !== 'toggle-global-pause') return;
+  return changePause(undefined, true).catch(pauseFailure);
+}
+chrome.commands?.onCommand.addListener(handlePauseCommand);
+const TRANSMISSION_MESSAGES = new Set(['LOOKUP_IOC', 'OPEN_EXTERNAL_PROVIDER', 'CORRELATE_IOCS', 'ADD_IOC_TO_MISP', 'TEST_API_KEY']);
+
+function cleanLegacyDetection() {
+  return removeLegacyDetected().catch((error) => console.warn('Unable to remove legacy detection state', error));
+}
+
+// Also runs when an existing installation starts or its service worker is restarted.
+cleanLegacyDetection();
 
 chrome.runtime.onInstalled.addListener((details) => {
+  cleanLegacyDetection();
   if (details.reason === 'install') {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/welcome/welcome.html') });
   }
@@ -56,10 +119,17 @@ async function ensureContentScripts(tabId) {
   }
 }
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'loading' || changeInfo.url !== undefined) {
+    await clearDetectedForTab(tabId).catch((error) => console.warn('Unable to clear tab detection state', error));
+  }
   if (changeInfo.status !== 'complete') return;
   if (!tab?.url || !/^https?:/i.test(tab.url)) return;
   ensureContentScripts(tabId);
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  return clearDetectedForTab(tabId).catch((error) => console.warn('Unable to clear tab detection state', error));
 });
 
 async function openInvestigationPanel(ioc, tab) {
@@ -72,42 +142,86 @@ async function openInvestigationPanel(ioc, tab) {
 }
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  try {
+    const token = await transmissions.begin();
+    return await handleInvestigationMenu(info, tab, token);
+  } catch (error) {
+    const failure = pauseFailure(error);
+    if (tab?.id) {
+      await chrome.tabs.sendMessage(tab.id, { type: 'MUSTELA_ACTION_BLOCKED', ...failure }).catch(() => undefined);
+    }
+    return failure;
+  }
+});
+
+async function handleInvestigationMenu(info, tab, token) {
   const detected = detectSingleIoc(info.selectionText || '');
   if (!detected) return;
 
   if (isProtectedIoc(detected) && ['open-virustotal', 'open-abuseipdb', 'open-shodan'].includes(info.menuItemId)) {
     // Explain the blocked pivot in the panel instead of silently doing nothing.
-    await openInvestigationPanel(detected, tab);
+    await transmissions.run(token, () => openInvestigationPanel(detected, tab));
     return;
   }
 
-  if (info.menuItemId === 'open-virustotal') {
+  if (info.menuItemId === 'open-virustotal' && isProviderSupportedForIoc('virustotal', detected)) {
     const url = PROVIDERS.virustotal.buildExternalUrl?.(detected);
-    if (url) await chrome.tabs.create({ url });
+    if (url) await transmissions.run(token, () => chrome.tabs.create({ url }));
     return;
   }
   if (info.menuItemId === 'open-abuseipdb' && isProviderSupportedForIoc('abuseipdb', detected)) {
     const url = PROVIDERS.abuseipdb.buildExternalUrl?.(detected);
-    if (url) await chrome.tabs.create({ url });
+    if (url) await transmissions.run(token, () => chrome.tabs.create({ url }));
     return;
   }
   if (info.menuItemId === 'open-shodan' && isProviderSupportedForIoc('shodan', detected)) {
     const url = PROVIDERS.shodan.buildExternalUrl?.(detected);
-    if (url) await chrome.tabs.create({ url });
+    if (url) await transmissions.run(token, () => chrome.tabs.create({ url }));
     return;
   }
   if (info.menuItemId !== 'investigate-selection') return;
-  await openInvestigationPanel(detected, tab);
-});
+  await transmissions.run(token, () => openInvestigationPanel(detected, tab));
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   handleMessage(message, sender).then(sendResponse).catch((error) => {
-    sendResponse({ ok: false, error: error.message || String(error) });
+    sendResponse(pauseFailure(error));
   });
   return true;
 });
 
+// Content scripts run beside untrusted pages. Only grant the capabilities used
+// by detection and the in-page panel; settings and bulk history stay privileged.
+const CONTENT_MESSAGES = new Set([
+  'GET_CONTENT_SETTINGS', 'PAGE_IOCS_DETECTED', 'GET_PAUSE_STATE',
+  'LOOKUP_IOC', 'OPEN_EXTERNAL_PROVIDER', 'GET_HISTORY_ENTRY',
+  'SAVE_HISTORY_NOTE', 'SAVE_HISTORY_TLP', 'IS_PAGE_DISABLED', 'ADD_IOC_TO_MISP'
+]);
+
+function isMessageAuthorized(type, sender) {
+  if (!sender || !chrome.runtime.id || sender.id !== chrome.runtime.id) return false;
+  try {
+    const url = new URL(sender.url);
+    const extensionPage = url.protocol === 'chrome-extension:' && url.hostname === chrome.runtime.id;
+    // The options/welcome page can itself be displayed in an extension tab.
+    if (extensionPage) {
+      if (!sender.tab) return true;
+      const tabUrl = new URL(sender.tab.url);
+      return tabUrl.protocol === 'chrome-extension:' && tabUrl.hostname === chrome.runtime.id;
+    }
+    return !!sender.tab && ['http:', 'https:'].includes(url.protocol) && CONTENT_MESSAGES.has(type);
+  } catch {
+    return false;
+  }
+}
+
+function contentSettings(settings) {
+  return { highlightEnabled: settings.highlightEnabled, detectionMode: settings.detectionMode };
+}
+
 async function handleMessage(message, sender) {
+  if (!isMessageAuthorized(message?.type, sender)) return { ok: false, error: 'Unauthorized message' };
+  const token = TRANSMISSION_MESSAGES.has(message?.type) ? await transmissions.begin() : undefined;
   switch (message?.type) {
     case 'PAGE_IOCS_DETECTED': {
       const tabId = sender.tab?.id;
@@ -120,6 +234,12 @@ async function handleMessage(message, sender) {
       const tabId = message.payload?.tabId;
       return { ok: true, data: await getDetectedForTab(tabId) };
     }
+    case 'GET_PAUSE_STATE':
+      return { ok: true, data: await transmissions.getState(), ...(transitionError ? { transitionError } : {}) };
+    case 'SET_PAUSE_STATE':
+      return changePause(message.payload?.paused);
+    case 'GET_CONTENT_SETTINGS':
+      return { ok: true, data: contentSettings(await getSettings()) };
     case 'GET_SETTINGS':
       return { ok: true, data: await getSettings() };
     case 'SAVE_SETTINGS': {
@@ -128,13 +248,13 @@ async function handleMessage(message, sender) {
         const tabs = await chrome.tabs.query({});
         await Promise.all(tabs.map((tab) => {
           if (typeof tab.id !== 'number') return Promise.resolve();
-          return chrome.tabs.sendMessage(tab.id, { type: 'SETTINGS_UPDATED', payload: { highlightEnabled: saved.highlightEnabled, detectionMode: saved.detectionMode } }).catch(() => undefined);
+          return chrome.tabs.sendMessage(tab.id, { type: 'SETTINGS_UPDATED', payload: contentSettings(saved) }).catch(() => undefined);
         }));
       } catch {}
       return { ok: true, data: saved };
     }
     case 'LOOKUP_IOC':
-      return { ok: true, data: await lookupIoc(message.payload, sender) };
+      return { ok: true, data: await lookupIoc(message.payload, sender, token) };
     case 'OPEN_EXTERNAL_PROVIDER': {
       const provider = PROVIDERS[message.payload?.provider];
       const ioc = message.payload?.ioc;
@@ -143,7 +263,7 @@ async function handleMessage(message, sender) {
       if (!isProviderSupportedForIoc(provider.id, ioc)) return { ok: false, error: 'Unsupported IOC for provider' };
       const url = provider.buildExternalUrl(ioc);
       if (!url) return { ok: false, error: 'External lookup unavailable' };
-      await chrome.tabs.create({ url });
+      await transmissions.run(token, () => chrome.tabs.create({ url }));
       return { ok: true, data: { url } };
     }
     case 'GET_HISTORY':
@@ -172,12 +292,12 @@ async function handleMessage(message, sender) {
     case 'TEST_API_KEY': {
       const providerId = message.payload?.provider;
       if (providerId === 'llm') {
-        const result = await validateOpenAiCompatibleConfig(message.payload);
+        const result = await transmissions.run(token, () => validateOpenAiCompatibleConfig(message.payload));
         return { ok: true, data: { valid: !!result.ok, limited: !!result.limited, message: result.message || (result.ok ? 'Connection valid' : 'Validation failed') } };
       }
       const provider = PROVIDERS[providerId];
       if (!provider || !provider.validateApiKey) return { ok: false, error: 'Unsupported provider' };
-      const result = await provider.validateApiKey(message.payload);
+      const result = await transmissions.run(token, () => provider.validateApiKey(message.payload, () => transmissions.run(token, () => undefined)));
       return { ok: true, data: { valid: !!result.ok, limited: !!result.limited, message: result.message || (result.ok ? 'API key valid' : 'Invalid API key') } };
     }
     case 'CORRELATE_IOCS': {
@@ -190,18 +310,19 @@ async function handleMessage(message, sender) {
       const entries = selectCorrelationEntries(history);
       if (entries.length < 2) return { ok: false, error: 'Not enough eligible investigation history for correlation: internal/reserved IPv4 entries are excluded; at least two eligible entries are required.' };
       const { pageUrl = '', pageTitle = '' } = message?.payload || {};
-      const result = await generateCorrelationAnalysis(entries, llm, { pageUrl, pageTitle });
+      const result = await transmissions.run(token, () => generateCorrelationAnalysis(entries, llm, { pageUrl, pageTitle }));
       return { ok: true, data: result };
     }
     case 'ADD_IOC_TO_MISP': {
       const settings = await getSettings();
       const ioc = message.payload?.ioc;
       if (!ioc?.normalized || !ioc?.type) return { ok: false, error: 'Invalid IOC' };
-      const result = await addIocToMisp(ioc, settings.providers?.misp || {}, {
+      if (!isProviderSupportedForIoc('misp', ioc)) return { ok: false, error: 'Unsupported IOC for MISP' };
+      const result = await transmissions.run(token, () => addIocToMisp(ioc, settings.providers?.misp || {}, {
         eventId: message.payload?.eventId,
         comment: message.payload?.comment,
         tlp: message.payload?.tlp
-      });
+      }));
       return { ok: true, data: result };
     }
     default:
@@ -327,13 +448,14 @@ function buildProviderCacheProfile(settings = {}) {
   });
 }
 
-async function maybeAttachLlmSummary(settings, investigation) {
+async function maybeAttachLlmSummary(settings, investigation, token) {
+  transmissions.run(token, () => undefined);
   if (isProtectedIoc(investigation.ioc)) return investigation;
   const llm = settings?.analystAssist || {};
   if (!llm.enabled || !llm.baseUrl || !llm.apiKey || !llm.model) return investigation;
 
   try {
-    const summary = await generateInvestigationSummary(investigation, llm);
+    const summary = await transmissions.run(token, () => generateInvestigationSummary(investigation, llm));
     return {
       ...investigation,
       llmSummary: summary
@@ -350,7 +472,7 @@ async function maybeAttachLlmSummary(settings, investigation) {
   }
 }
 
-async function lookupIoc(ioc, sender = {}) {
+async function lookupIoc(ioc, sender = {}, token) {
   const protectedIpv4 = isProtectedIoc(ioc);
   const settings = await getSettings();
   const providerFingerprint = btoa(buildProviderCacheProfile(settings));
@@ -370,6 +492,7 @@ async function lookupIoc(ioc, sender = {}) {
 
   const results = [];
   for (const [providerId, provider] of Object.entries(PROVIDERS)) {
+    transmissions.run(token, () => undefined);
     if (protectedIpv4 && provider.external !== false) {
       results.push({ provider: provider.name, success: false, blocked: true, summary: PUBLIC_LOOKUP_BLOCK_REASON });
       continue;
@@ -393,7 +516,7 @@ async function lookupIoc(ioc, sender = {}) {
       continue;
     }
     try {
-      const result = await provider.lookup(ioc, providerSettings);
+      const result = await transmissions.run(token, () => provider.lookup(ioc, providerSettings));
       results.push({ timestamp: new Date().toISOString(), ...result });
     } catch (error) {
       const humanMessage = humanizeProviderError(error, provider.name);
@@ -403,6 +526,14 @@ async function lookupIoc(ioc, sender = {}) {
 
   const orderedResults = sortProviderResults(results);
   const summary = summarizeProviderVerdict(orderedResults);
+  if (ioc.type === 'email') {
+    summary.explanation = 'Email investigation has no compatible reputation provider. Unknown does not mean clean; use local notes and evidence.';
+    summary.threatSummary.narrative = summary.explanation;
+    summary.recommendation = {
+      level: 'info', title: 'Review local evidence', summary: summary.explanation,
+      action: 'Validate the full email address against your authorized telemetry and keep investigation notes locally.'
+    };
+  }
   if (protectedIpv4) {
     summary.explanation = PROTECTED_IPV4_EXPLANATION;
     summary.threatSummary.narrative = `${PROTECTED_IPV4_EXPLANATION} ${summary.threatSummary.narrative}`;
@@ -414,7 +545,7 @@ async function lookupIoc(ioc, sender = {}) {
     ...summary,
     timestamp: new Date().toISOString()
   };
-  const enrichedInvestigation = await maybeAttachLlmSummary(settings, investigation);
+  const enrichedInvestigation = await maybeAttachLlmSummary(settings, investigation, token);
   const cacheWrite = await setCachedResult(cacheKey, enrichedInvestigation);
   await rememberInvestigation(ioc, enrichedInvestigation, sender);
   if (cacheWrite && cacheWrite.quota) {

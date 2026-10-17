@@ -1,7 +1,67 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { addIocToMisp, getSupportedExternalProviders, isProviderSupportedForIoc, PROVIDERS } from '../src/providers/providers.js';
-import { IOC_TYPES } from '../src/shared/ioc.js';
+import { IOC_TYPES, detectSingleIoc } from '../src/shared/ioc.js';
+
+test('defanged indicators feed canonical values to supported provider pivots and lookups', async () => {
+  for (const raw of ['hxxps[:]//evil[.]test/a', 'evil(.)test', '8[.]8(.)8[.]8']) {
+    const ioc = detectSingleIoc(raw);
+    for (const provider of getSupportedExternalProviders(ioc)) {
+      assert.equal(decodeURIComponent(PROVIDERS[provider].buildExternalUrl(ioc)).includes(ioc.normalized), true);
+    }
+  }
+  await withMockFetch(async (url) => {
+    assert.equal(url, 'https://www.virustotal.com/api/v3/ip_addresses/8.8.8.8');
+    return { ok: true, json: async () => ({ data: { attributes: {} } }) };
+  }, () => PROVIDERS.virustotal.lookup(detectSingleIoc('8[.]8(.)8[.]8'), 'test-key'));
+});
+
+test('IPv6 keeps encoded IP pivots and provider requests, including MISP lookup and explicit add', async () => {
+  const ioc = detectSingleIoc('2001:0DB8:0:0:0:0:0:1');
+  assert.equal(ioc.type, 'ip');
+  assert.equal(ioc.normalized, '2001:db8::1');
+  const encoded = '2001%3Adb8%3A%3A1';
+  assert.deepEqual(getSupportedExternalProviders(ioc), ['virustotal', 'abuseipdb', 'shodan']);
+  for (const id of getSupportedExternalProviders(ioc)) assert.ok(PROVIDERS[id].buildExternalUrl(ioc).endsWith(encoded));
+  const calls = [];
+  const config = { baseUrl: 'https://misp.example.org', apiKey: 'test-key', defaultEventId: '42' };
+  await withMockFetch(async (url, options) => {
+    calls.push({ url, options });
+    assert.equal(options.credentials, 'omit');
+    assert.equal(options.cache, 'no-store');
+    assert.equal(options.referrerPolicy, 'no-referrer');
+    assert.ok(options.signal);
+    return new Response(JSON.stringify({ data: { attributes: {} }, response: { Attribute: [] } }));
+  }, async () => {
+    for (const id of ['virustotal', 'abuseipdb', 'shodan', 'misp']) await PROVIDERS[id].lookup(ioc, config);
+    assert.equal(calls.length, 4, 'lookup must not add to MISP');
+    await addIocToMisp(ioc, config);
+  });
+  assert.equal(calls[0].url, `https://www.virustotal.com/api/v3/ip_addresses/${encoded}`);
+  assert.equal(new URL(calls[1].url).searchParams.get('ipAddress'), ioc.normalized);
+  assert.ok(calls[1].url.includes(encoded));
+  assert.ok(calls[2].url.includes(`/shodan/host/${encoded}?`));
+  assert.equal(calls[3].url, 'https://misp.example.org/attributes/restSearch');
+  assert.equal(JSON.parse(calls[3].options.body).value, ioc.normalized);
+  assert.deepEqual(JSON.parse(calls[3].options.body).type, ['ip-src', 'ip-dst']);
+  assert.equal(calls[4].url, 'https://misp.example.org/attributes/add/42');
+  assert.equal(JSON.parse(calls[4].options.body).value, ioc.normalized);
+  assert.equal(JSON.parse(calls[4].options.body).type, 'ip-dst');
+});
+
+test('IPv6 provider rejection and timeout remain explicit errors', async () => {
+  const ioc = detectSingleIoc('::ffff:192.0.2.1');
+  assert.equal(ioc.normalized, '::ffff:c000:201');
+  for (const id of ['virustotal', 'abuseipdb', 'shodan', 'misp']) {
+    const config = { baseUrl: 'https://misp.example.org', apiKey: 'test-key' };
+    await withMockFetch(async () => new Response('{}', { status: 422 }), async () => {
+      await assert.rejects(() => PROVIDERS[id].lookup(ioc, config), /HTTP 422/);
+    });
+    await withMockFetch(async () => { throw new DOMException('Timed out', 'AbortError'); }, async () => {
+      await assert.rejects(() => PROVIDERS[id].lookup(ioc, config), /Timed out/);
+    });
+  }
+});
 
 function withMockFetch(handler, run) {
   const originalFetch = global.fetch;

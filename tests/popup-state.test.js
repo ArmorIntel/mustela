@@ -2,6 +2,30 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyHistoryFilter, buildIocKey, choosePrimaryInvestigationTarget, findSameIocHistory, getManualLookupState, mapCurrentIocsToHistory, summarizeHistoryContext } from '../src/popup/state.js';
 
+test('defanged manual lookup shares canonical history keys and supported pivots', () => {
+  for (const [raw, normalized, type] of [['HXXPS[:]//evil(.)test/a', 'https://evil.test/a', 'url'], ['evil[.]test', 'evil.test', 'domain'], ['8[.]8(.)8[.]8', '8.8.8.8', 'ip']]) {
+    const state = getManualLookupState(raw);
+    assert.equal(state.ioc.normalized, normalized);
+    assert.equal(state.ioc.raw, raw);
+    assert.equal(buildIocKey(state.ioc), `${type}:${normalized}`);
+    assert.equal(state.pivots.virustotal, true);
+    assert.equal(state.pivots.abuseipdb, type === 'ip');
+  }
+});
+
+test('email manual lookup and history preserve local-part identity without pivots', () => {
+  const upper = getManualLookupState('First.Last@EVIL.TEST');
+  assert.equal(upper.ioc.type, 'email');
+  assert.equal(upper.ioc.normalized, 'First.Last@evil.test');
+  assert.deepEqual(upper.pivots, { virustotal: false, abuseipdb: false, shodan: false });
+  const lower = { type: 'email', normalized: 'first.last@evil.test' };
+  const history = [{ historyKey: 'email:First.Last@evil.test' }];
+  assert.equal(buildIocKey(upper.ioc), history[0].historyKey);
+  assert.equal(findSameIocHistory(history, [lower]), null);
+  assert.equal(mapCurrentIocsToHistory(history, [lower])[0].alreadyInvestigated, false);
+  assert.equal(findSameIocHistory(history, [upper.ioc]), history[0]);
+});
+
 test('buildIocKey normalizes casing and whitespace', () => {
   assert.equal(buildIocKey({ type: ' IP ', normalized: ' 8.8.8.8 ' }), 'ip:8.8.8.8');
   assert.equal(buildIocKey({ type: 'DOMAIN', normalized: ' Evil.Example ' }), 'domain:evil.example');

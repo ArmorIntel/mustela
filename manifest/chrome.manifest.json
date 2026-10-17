@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Mustela",
   "description": "Detect and investigate IOC values from any page.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "permissions": ["storage", "activeTab", "contextMenus", "tabs", "scripting"],
   "host_permissions": [
     "http://*/*",
@@ -14,6 +14,9 @@
   "background": {
     "service_worker": "src/background/background.js",
     "type": "module"
+  },
+  "commands": {
+    "toggle-global-pause": { "description": "Toggle Mustela global pause" }
   },
   "action": {
     "default_title": "Mustela",

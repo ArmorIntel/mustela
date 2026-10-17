@@ -1,4 +1,5 @@
-import { applyHistoryFilter, findSameIocHistory, getManualLookupState, mapCurrentIocsToHistory } from './state.js';
+import { createPauseController, applyHistoryFilter, findSameIocHistory, getManualLookupState, mapCurrentIocsToHistory } from './state.js';
+import { generateDefenderQuery } from '../shared/hunting.js';
 
 async function send(type, payload) {
   return chrome.runtime.sendMessage({ type, payload });
@@ -546,7 +547,11 @@ function mountManualLookup(tab, onOpened) {
   const vtBtn = document.getElementById('manualVtBtn');
   const abuseBtn = document.getElementById('manualAbuseBtn');
   const shodanBtn = document.getElementById('manualShodanBtn');
-  if (!input || !chip || !hint || !investigateBtn || !vtBtn || !abuseBtn || !shodanBtn) return;
+  const kqlBtn = document.getElementById('manualKqlBtn');
+  const kqlStatus = document.getElementById('manualKqlStatus');
+  let copyingQuery = false;
+  let inputVersion = 0;
+  if (!input || !chip || !hint || !investigateBtn || !vtBtn || !abuseBtn || !shodanBtn || !kqlBtn || !kqlStatus) return;
 
   const syncState = () => {
     const state = getManualLookupState(input.value);
@@ -556,6 +561,9 @@ function mountManualLookup(tab, onOpened) {
     vtBtn.disabled = !state.pivots?.virustotal;
     abuseBtn.disabled = !state.pivots?.abuseipdb;
     shodanBtn.disabled = !state.pivots?.shodan;
+    const hunting = generateDefenderQuery(input.value);
+    kqlBtn.disabled = copyingQuery || !hunting.query;
+    kqlStatus.textContent = hunting.reason;
     return state;
   };
 
@@ -572,7 +580,33 @@ function mountManualLookup(tab, onOpened) {
     window.close();
   };
 
-  input.addEventListener('input', syncState);
+  input.addEventListener('input', () => {
+    inputVersion += 1;
+    syncState();
+  });
+  kqlBtn.addEventListener('click', async () => {
+    const { query, reason } = generateDefenderQuery(input.value);
+    if (copyingQuery || !query) {
+      kqlStatus.textContent = reason;
+      return;
+    }
+    const version = inputVersion;
+    copyingQuery = true;
+    kqlBtn.disabled = true;
+    kqlStatus.textContent = 'Copying query…';
+    let message;
+    try {
+      await navigator.clipboard.writeText(query);
+      message = 'Query copied';
+    } catch {
+      message = 'Could not copy query. Try again.';
+    } finally {
+      copyingQuery = false;
+      syncState();
+      // Do not announce an old result as confirmation for newly edited input.
+      if (version === inputVersion) kqlStatus.textContent = message;
+    }
+  });
   input.addEventListener('keydown', async (event) => {
     if (event.key !== 'Enter') return;
     event.preventDefault();
@@ -603,7 +637,32 @@ function mountManualLookup(tab, onOpened) {
   syncState();
 }
 
+function mountGlobalPause() {
+  const button = document.getElementById('globalPauseBtn');
+  const retry = document.getElementById('pauseRetryBtn');
+  const status = document.getElementById('pauseStatus');
+  const controller = createPauseController(send, ({ paused, pending, error }) => {
+    button.disabled = pending || paused === null;
+    button.textContent = paused === null ? 'Global state unavailable' : paused ? 'Mustela OFF — resume' : 'Mustela ON — pause';
+    button.setAttribute('aria-pressed', String(paused === false));
+    status.textContent = error || (pending ? 'Saving…' : paused === null ? 'Unable to confirm global state.' : paused ? 'OFF confirmed on all pages.' : 'ON — existing page preferences apply.');
+    retry.hidden = !error;
+    retry.disabled = pending || !error;
+  });
+  button.addEventListener('click', () => controller.toggle());
+  retry.addEventListener('click', () => controller.retry());
+  chrome.runtime.onMessage.addListener((message) => {
+    if (['PAUSE_STATE_UPDATED', 'PAUSE_CHANGE_FAILED'].includes(message?.type)) controller.refresh();
+  });
+  document.getElementById('pauseShortcuts').addEventListener('click', (event) => {
+    event.preventDefault();
+    chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+  });
+  controller.refresh();
+}
+
 async function init() {
+  mountGlobalPause();
   const tab = await getActiveTab();
   const url = tab?.url || '';
   const disabledRes = await send('IS_PAGE_DISABLED', { url });

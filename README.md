@@ -68,6 +68,53 @@ Then load `dist/chrome` with **Load unpacked** in `chrome://extensions` (same st
 
 ---
 
+## Global pause
+
+Use the named **Mustela ON — pause / Mustela OFF — resume** button in the popup to control all pages, independently of the page-exclusion button. The control works with the keyboard, shows only the confirmed background state, stays synchronized across open/reopened popups, and offers a retry if saving fails. Existing installations default to ON.
+
+Assign **Toggle Mustela global pause** at `chrome://extensions/shortcuts` to use the same control without opening the popup. No shortcut is imposed and the command is not global outside Chrome. If no shortcut is assigned or Chrome reports a conflict, use the popup button and its shortcut-settings link to assign another combination.
+
+The toolbar badge and action title show **ON** (no global pause; URL/highlighting preferences still apply) or **OFF** (globally paused), not just a color. ON does not mean highlighting is active on every URL. Saved OFF is restored after worker/browser restart; no assumed ON is published before the saved state is read. Rapid commands are processed in order with popup changes. A failed save leaves the confirmed badge unchanged and exposes a retryable error in open/reopened popups; the command does not report a false OFF. This transient error is cleared by the next successful change or worker restart, not stored as a second pause state.
+
+OFF immediately removes IOC highlights and detection indicators from loaded pages, closes investigation panels, and suspends scans even when the page changes. New/reloaded pages and a restarted background worker respect the saved pause. ON resumes detection only where URL rules allow it and highlighting was already enabled; it never reopens a panel or replays an investigation. Existing keys, preferences, history, and cache are preserved.
+
+Extension interfaces use `GET_PAUSE_STATE` or `SET_PAUSE_STATE` with `payload: { paused: true }` (OFF) / `{ paused: false }` (ON). Success is `{ ok: true, data: { paused: boolean } }` only after local persistence. Confirmed changes notify loaded pages and popups with `PAUSE_STATE_UPDATED`; unavailable or restricted tabs do not block other pages. Storage failures return an explicit retryable error, not an OFF confirmation. Use this contract rather than writing storage directly.
+
+Once OFF is confirmed, the background rejects investigations/reruns, provider pivots, correlation, MISP adds, API-key tests, and investigation context menus, even from an already-open interface or without API keys. Interrupted investigations cannot continue after ON; resuming preserves preferences and never replays blocked actions. Already-started requests may finish: pause does not recall transmitted data, delete remote data, or stop autonomous traffic from websites already open. See [the pause network contract](docs/PRIVACY_TRANSPARENCY.md#global-transmission-pause).
+
+## Copy a Defender hunting query
+
+In the popup's **Manual lookup**, enter exactly one IPv4, domain, HTTP(S) URL, MD5, SHA1, or SHA256 and choose **Copy Defender KQL**. This local action needs no API keys or Analyst Assist, leaves the popup open, and does not investigate, save history, or contact Microsoft. Paste and run the query yourself in **Microsoft Defender XDR Advanced Hunting**, with **Defender for Endpoint telemetry** available.
+
+For `8.8.8.8`, the clipboard receives:
+
+```kusto
+// Microsoft Defender XDR Advanced Hunting — requires Defender for Endpoint telemetry
+DeviceNetworkEvents
+| where Timestamp >= ago(7d)
+| where RemoteIP == "8.8.8.8"
+```
+
+The fixed default is **7 days**; edit it after pasting if needed. Network indicators use `DeviceNetworkEvents`: domains match `RemoteUrl` exactly (case-insensitive), not subdomains or full URLs; URLs match exactly (case-sensitive), preserving the parser-normalized path and parameters. Hashes use `DeviceFileEvents` with the corresponding case-insensitive MD5/SHA1/SHA256 filter. Hash columns may be unpopulated, especially SHA256: no results do not prove absence of the IOC.
+
+Only whole inputs recognized by the current parser are supported; surrounding text, multiple IOC, ASN, subnet, IPv6 and email inputs are rejected. This is not a generic Sentinel/DNS template or a Splunk/Elastic connector. No query execution or real-tenant validation is provided. Clipboard contents may be accessible to other applications; check where you paste them. See [privacy details](docs/PRIVACY_TRANSPARENCY.md#defender-query-clipboard).
+
+## Defanged indicators
+
+Detection and manual investigation recognize `hxxp`/`hxxps`, `[:]` in place of the scheme colon, and `[.]` or `(.)` in domain/IPv4 hosts, including mixed separators. For example, `HXXPS[:]//evil(.)test/a` is investigated as `https://evil.test/a`; `8[.]8(.)8[.]8` becomes `8.8.8.8`. Existing domain exclusions and IPv4 protections still apply.
+
+The page keeps its original text: highlights are not links, scanning does not contact the target or providers, and nested host indicators are not counted twice. Only the investigation representation is refanged; path/query text is not rewritten. IPv6, email, defanged CIDR, other obfuscations, and indicators split across text nodes are not supported by this addition. See [privacy details](docs/PRIVACY_TRANSPARENCY.md#defanged-investigation-values).
+
+## Email indicators
+
+ASCII email addresses such as `analyst+tag@evil.test` and `First.Last@EVIL.TEST` are distinct `email` IOC in balanced/strict scans, manual lookup and selection investigations. Only the domain is lowercased (`First.Last@evil.test`); local-part case stays distinct in cache, history and local notes. Copy/export retain the complete address. Detection is local, with no provider call or automatic navigation, and ignores editable fields.
+
+Supported addresses have an unquoted dot-atom local part (no leading, trailing or consecutive dots) and an ASCII DNS domain with at least two labels. Unicode/IDN, quoted local parts, defanged email and full RFC5322 syntax are not supported. Invalid/unsupported address-like tokens do not yield nested domain or local-part IOC. Domains outside addresses remain detectable.
+
+Email has no compatible reputation provider or external pivot, including VirusTotal, AbuseIPDB, Shodan and MISP; **Add to MISP** is unavailable. No implicit domain pivot or mailto action is added. Without keys and with Analyst Assist disabled, investigation, notes, copy/export and history remain local and usable; unknown is not a clean verdict.
+
+Email can be personal data. Enabled, fully configured **Analyst Assist** can automatically send the complete address and available page URL/title to your chosen endpoint on an uncached investigation (including reruns), and explicit correlation can include email history. These remain optional, existing triggers, not a promise of zero disclosure. Detection alone and scanning an excluded page do not send it. See [email privacy details](docs/PRIVACY_TRANSPARENCY.md#email-investigation-values).
+
 ## Setting up providers
 
 Mustela detects and highlights IOC out of the box — no API keys required.
@@ -251,6 +298,7 @@ Mustela automatically detects the following indicator types on any page:
 | Type | Examples |
 |---|---|
 | IPv4 address | `192.168.1.1`, `8.8.8.8` |
+| IPv6 address (same IP type) | `2001:db8::1`, `::1`, `::`, `::ffff:192.0.2.1` → `::ffff:c000:201`; full/compressed literals, optional surrounding brackets; no CIDR, zone IDs or refang |
 | IPv4 subnet | `10.0.0.0/8` |
 | ASN | `AS15169` |
 | Domain | `evil.example.com` |
@@ -321,6 +369,9 @@ Mustela stores the following locally in your browser; local storage is not a gua
 | Investigation history, including page context and summary/action text | `chrome.storage.local` |
 | Analyst notes | `chrome.storage.local` |
 | Disabled-page rules | `chrome.storage.local` |
+| IOC detected on the current tab, with page URL/title | `chrome.storage.session` (memory only; cleared on tab closure or navigation) |
+
+Detected lists are stored per tab, with page context stored once, and unchanged lists are not rewritten. They survive service-worker restarts, not browser sessions. Startup/update removes the legacy disk-backed detection key; investigation history and cache are unchanged.
 
 There is no project backend or cloud sync. Investigations can call configured providers (including your chosen MISP instance) and automatically request an Analyst Assist summary. Connection tests, dedicated MISP add/correlation actions, and manual pivots also send requests to their recipients. Full details in [`docs/PRIVACY_TRANSPARENCY.md`](docs/PRIVACY_TRANSPARENCY.md).
 
@@ -346,6 +397,7 @@ Mustela is intentionally transparent:
 
 - IOC detection and highlighting run **locally in the browser**
 - Settings, cache, history, notes, and disabled-page rules are stored in `chrome.storage.local` — not synced to any cloud
+- API keys are never sent to visited pages or their content scripts through extension messages. Content-script settings contain only highlighting and detection preferences; sender checks reserve full settings and administrative actions for this extension's own pages.
 - Investigations send IOC to enabled/configured providers, including MISP; MISP creation is a separate action
 - Enabled/configured Analyst Assist automatically receives a summary prompt on uncached investigations, including available URL/title and provider context; dedicated correlation sends selected history data
 - Manual pivots may disclose IOC without an API key; local LLM hosting does not prevent other outbound flows

@@ -11,22 +11,108 @@ let lastDetectedIocs = [];
 let extensionDisabled = false;
 let highlightEnabled = true;
 let detectionMode = 'balanced';
+let globallyPaused = true; // Fail closed until the background confirms initialization.
+let initialized = false;
+let pauseRevision = 0;
+let panelGeneration = 0;
+const MAX_SCAN_NODES = 1500;
+const MAX_TEXT_LENGTH = 8192;
+const SCAN_SLICE_MS = 8;
+const pendingRoots = new Set();
+const detectedByNode = new Map();
+let processedNodes = new WeakSet();
+let scanGeneration = 0;
+let scanTimer;
+let activeScan;
+let pendingChanges = false;
+let publishedSignature = '';
 
-function walkTextNodes(root) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-      const parent = node.parentElement;
-      if (!parent) return NodeFilter.FILTER_REJECT;
-      if (SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
-      if (parent.closest('[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]')) return NodeFilter.FILTER_REJECT;
-      if (parent.closest('.mustela-panel, .mustela-highlight, .mustela-page-indicator')) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
+function applyPauseState(paused) {
+  const changed = globallyPaused !== paused;
+  globallyPaused = paused;
+  if (paused) {
+    cancelScan();
+    observer?.disconnect();
+    closePanel();
+    stripHighlights();
+    updatePageIndicator(0);
+    publishDetectedIocs([]);
+  } else if (initialized && changed) {
+    scanPage();
+    observePage();
+  }
+}
+
+async function syncPauseState() {
+  const revision = ++pauseRevision;
+  const response = await sendRuntimeMessage({ type: 'GET_PAUSE_STATE' });
+  if (revision === pauseRevision) applyPauseState(!response?.ok || response.data?.paused !== false);
+}
+
+function observePage() {
+  if (initialized && !globallyPaused) observer?.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+}
+
+const OWN_UI = '.mustela-panel, .mustela-highlight, .mustela-page-indicator';
+const SKIP_ANCESTORS = `${[...SKIP_TAGS].join(',')}, ${OWN_UI}, [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]`;
+function skipElement(element) {
+  return element && (SKIP_TAGS.has(element.tagName)
+    || element.matches('[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]')
+    || element.matches(OWN_UI));
+}
+
+function cancelScan() {
+  scanGeneration++;
+  clearTimeout(scanTimer);
+  scanTimer = null;
+  pendingRoots.clear();
+  pendingChanges = false;
+  detectedByNode.clear();
+  processedNodes = new WeakSet();
+}
+
+function collectMutations(records) {
+  if (globallyPaused || extensionDisabled || !highlightEnabled) return;
+  let changed = false;
+  for (const record of records) {
+    const parent = record.target.nodeType === 3 ? record.target.parentElement : record.target;
+    if (parent?.closest?.(OWN_UI)) continue;
+    if (record.type === 'characterData') {
+      processedNodes.delete(record.target);
+      detectedByNode.delete(record.target);
+      if (pendingRoots.size < MAX_SCAN_NODES) pendingRoots.add(record.target);
+      changed = true;
+    } else {
+      for (const node of record.addedNodes) {
+        if (node.nodeType !== 1 && node.nodeType !== 3) continue;
+        if (node.nodeType === 1 && node.matches(OWN_UI)) continue;
+        if (pendingRoots.size < MAX_SCAN_NODES) pendingRoots.add(node);
+        changed = true;
+      }
+      if ([...record.removedNodes].some((node) => node.nodeType !== 1 || !node.matches(OWN_UI))) changed = true;
     }
-  });
-  const nodes = [];
-  while (walker.nextNode()) nodes.push(walker.currentNode);
-  return nodes;
+  }
+  // A trailing-only debounce starves on live feeds. Keep one deadline from
+  // the first mutation; additions during that second join the same batch.
+  if (changed) {
+    pendingChanges = true;
+    scheduleScan();
+  }
+}
+
+function scheduleScan() {
+  if (!scanTimer) scanTimer = setTimeout(() => {
+    scanTimer = null;
+    scanPage(false);
+  }, 1000);
+}
+
+function mutatePage(write) {
+  // Preserve site mutations queued before our synchronous writes, but never
+  // observe our own replacements. Reconnect before yielding to the page.
+  collectMutations(observer?.takeRecords?.() || []);
+  observer?.disconnect();
+  try { return write(); } finally { observePage(); }
 }
 
 
@@ -65,7 +151,8 @@ function syncManualPivotButtons(root, ioc) {
 
 function buildHistoryKey(ioc) {
   const type = String(ioc?.type || '').trim().toLowerCase();
-  const normalized = String(ioc?.normalized || '').trim().toLowerCase();
+  const value = String(ioc?.normalized || '').trim();
+  const normalized = type === 'email' ? value : value.toLowerCase();
   return type && normalized ? `${type}:${normalized}` : '';
 }
 
@@ -121,7 +208,7 @@ function downloadTextFile(filename, content, mimeType = 'application/json') {
 function highlightNode(node) {
   if (!highlightEnabled) return [];
   const text = node.nodeValue;
-  const matches = parseIocsFromText(text, { mode: detectionMode });
+  const matches = parseIocsFromText(text.slice(0, MAX_TEXT_LENGTH), { mode: detectionMode });
   if (!matches.length) return [];
 
   const detected = matches.map((match) => ({
@@ -133,6 +220,7 @@ function highlightNode(node) {
   }));
 
   if (node.parentElement?.closest('a')) {
+    detectedByNode.set(node, detected);
     return detected;
   }
 
@@ -172,19 +260,24 @@ function highlightNode(node) {
   wrapper.className = 'mustela-fragment';
   wrapper.append(fragment);
   node.parentNode.replaceChild(wrapper, node);
+  detectedByNode.set(wrapper, detected);
   return detected;
 }
 
 function updatePageIndicator(count) {
-  if (pageIndicatorEl) pageIndicatorEl.remove();
   if (!count) {
+    pageIndicatorEl?.remove();
     pageIndicatorEl = null;
     return;
   }
-  pageIndicatorEl = document.createElement('div');
-  pageIndicatorEl.className = 'mustela-page-indicator';
+  if (!pageIndicatorEl?.isConnected) {
+    pageIndicatorEl = document.createElement('div');
+    pageIndicatorEl.className = 'mustela-page-indicator';
+    document.body.appendChild(pageIndicatorEl);
+  }
+  if (pageIndicatorEl.dataset.count === String(count)) return;
+  pageIndicatorEl.dataset.count = String(count);
   pageIndicatorEl.innerHTML = `<strong>${count}</strong> IOC${count > 1 ? 's' : ''} detected`;
-  document.body.appendChild(pageIndicatorEl);
 }
 
 function stripHighlights() {
@@ -202,24 +295,85 @@ function stripHighlights() {
 
 async function publishDetectedIocs(items) {
   lastDetectedIocs = Array.isArray(items) ? items : [];
+  const signature = JSON.stringify(lastDetectedIocs.map((ioc) => [ioc.type, ioc.normalized]).sort());
+  if (signature === publishedSignature) return;
+  publishedSignature = signature;
   await sendRuntimeMessage({ type: 'PAGE_IOCS_DETECTED', payload: lastDetectedIocs });
 }
 
-async function scanPage() {
-  if (extensionDisabled || !highlightEnabled) {
-    stripHighlights();
-    updatePageIndicator(0);
+async function scanPage(reset = true) {
+  if (reset) {
+    cancelScan();
+    mutatePage(stripHighlights);
+    pendingRoots.add(document.body);
+  } else if (activeScan) {
+    return activeScan;
+  }
+  if (!initialized || globallyPaused || extensionDisabled || !highlightEnabled) {
+    cancelScan();
+    mutatePage(() => { stripHighlights(); updatePageIndicator(0); });
     await publishDetectedIocs([]);
     return [];
   }
-  stripHighlights();
-  const nodes = walkTextNodes(document.body).slice(0, 1500);
-  const found = [];
-  for (const node of nodes) found.push(...highlightNode(node));
-  const unique = Array.from(new Map(found.map((ioc) => [`${ioc.type}:${ioc.normalized}`, ioc])).values());
-  updatePageIndicator(unique.length);
-  await publishDetectedIocs(unique);
-  return unique;
+  const generation = scanGeneration;
+  const roots = [...pendingRoots];
+  pendingRoots.clear();
+  pendingChanges = false;
+  for (const node of detectedByNode.keys()) if (!node.isConnected) detectedByNode.delete(node);
+  const work = async () => {
+    let visited = 0;
+    let sliceStart = Date.now();
+    const seen = new WeakSet();
+    for (const root of roots) {
+      if (!root || root.isConnected === false) continue;
+      if (root.parentElement?.closest(SKIP_ANCESTORS)) continue;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          if (node.nodeType === 1 && skipElement(node)) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+      let node = root;
+      while (node) {
+        if (generation !== scanGeneration) return [];
+        if (node.isConnected === false) break;
+        if (node.nodeType === 1 && skipElement(node)) break;
+        if (node.nodeType === 3 && !seen.has(node) && !processedNodes.has(node)) {
+          seen.add(node);
+          processedNodes.add(node);
+          // Snapshot the next node before highlighting detaches this one.
+          const next = walker.nextNode();
+          if (node.nodeValue?.slice(0, MAX_TEXT_LENGTH).trim() && detectedByNode.size < MAX_SCAN_NODES) mutatePage(() => highlightNode(node));
+          node = next;
+        } else node = walker.nextNode();
+        visited++;
+        if (visited >= MAX_SCAN_NODES) break;
+        if (Date.now() - sliceStart >= SCAN_SLICE_MS) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          sliceStart = Date.now();
+        }
+      }
+      if (visited >= MAX_SCAN_NODES) break;
+    }
+    if (generation !== scanGeneration) return [];
+    const unique = new Map();
+    for (const [node, items] of detectedByNode) {
+      if (!node.isConnected) { detectedByNode.delete(node); continue; }
+      for (const ioc of items) unique.set(`${ioc.type}:${ioc.normalized}`, ioc);
+    }
+    const items = [...unique.values()];
+    mutatePage(() => updatePageIndicator(items.length));
+    await publishDetectedIocs(items);
+    return items;
+  };
+  const promise = work();
+  activeScan = promise;
+  try { return await promise; } finally {
+    if (activeScan === promise) {
+      activeScan = null;
+      if (pendingChanges) scheduleScan();
+    }
+  }
 }
 
 function parseColor(color) {
@@ -720,15 +874,22 @@ function renderError(message) {
 }
 
 async function openPanel(ioc, allowCache) {
+  const opening = ++panelGeneration;
+  // Guard queued opens as well as newly clicked actions against durable state.
+  await syncPauseState();
+  if (!initialized || globallyPaused || opening !== panelGeneration) return;
   renderPanelSkeleton(ioc || {});
+  const generation = panelGeneration;
   if (!ioc || !ioc.normalized || !ioc.type) {
     renderEmptyState();
     return;
   }
   const response = await sendRuntimeMessage({ type: 'LOOKUP_IOC', payload: ioc });
+  if (globallyPaused || generation !== panelGeneration) return;
   if (!response?.ok) return renderError(response?.error || 'Lookup failed');
   if (!allowCache && response.data?.cached) {
     const second = await sendRuntimeMessage({ type: 'LOOKUP_IOC', payload: { ...ioc, _rerun: Date.now() } });
+    if (globallyPaused || generation !== panelGeneration) return;
     if (!second?.ok) return renderError(second?.error || 'Lookup failed');
     return renderResult(second.data);
   }
@@ -736,6 +897,7 @@ async function openPanel(ioc, allowCache) {
 }
 
 function closePanel() {
+  panelGeneration++;
   if (panelEl) panelEl.remove();
   panelEl = null;
 }
@@ -750,32 +912,26 @@ function escapeHtml(value) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'PAUSE_STATE_UPDATED') {
+    // Invalidate work immediately, even while an authoritative read is pending.
+    if (message.payload?.paused) applyPauseState(true);
+    syncPauseState().then(() => sendResponse({ ok: true }));
+    return true;
+  }
   if (message?.type === 'OPEN_INVESTIGATION_PANEL') {
     openPanel(message.payload || null, true);
     return;
   }
   if (message?.type === 'SET_PAGE_DISABLED') {
     extensionDisabled = !!message.payload?.disabled;
-    if (extensionDisabled) {
-      stripHighlights();
-      updatePageIndicator(0);
-      publishDetectedIocs([]);
-    } else {
-      scanPage();
-    }
+    scanPage();
     sendResponse({ ok: true });
     return true;
   }
   if (message?.type === 'SETTINGS_UPDATED') {
     highlightEnabled = message.payload?.highlightEnabled !== false;
     detectionMode = message.payload?.detectionMode === 'strict' ? 'strict' : 'balanced';
-    if (!highlightEnabled) {
-      stripHighlights();
-      updatePageIndicator(0);
-      publishDetectedIocs([]);
-    } else if (!extensionDisabled) {
-      scanPage();
-    }
+    scanPage();
     sendResponse({ ok: true });
     return true;
   }
@@ -795,22 +951,15 @@ async function bootstrap() {
     extensionDisabled = !!disabledResponse?.data;
   } catch {}
   try {
-    const settingsResponse = await sendRuntimeMessage({ type: 'GET_SETTINGS' });
+    const settingsResponse = await sendRuntimeMessage({ type: 'GET_CONTENT_SETTINGS' });
     highlightEnabled = settingsResponse?.data?.highlightEnabled !== false;
     detectionMode = settingsResponse?.data?.detectionMode === 'strict' ? 'strict' : 'balanced';
   } catch {}
-  const debouncedScan = debounce(scanPage, 1000);
-  observer = new MutationObserver(() => debouncedScan());
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  await syncPauseState();
+  initialized = true;
+  observer = new MutationObserver(collectMutations);
+  observePage();
   scanPage();
 }
 
 bootstrap();
-
-function debounce(fn, delay) {
-  let timer;
-  return (...args) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), delay);
-  };
-}

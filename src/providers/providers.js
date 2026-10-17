@@ -365,11 +365,13 @@ async function abuseValidate(configOrKey) {
   return { ok: false, message: `Validation failed (${response.status})`, limited: false };
 }
 
-async function shodanValidate(configOrKey) {
+async function shodanValidate(configOrKey, assertTransmissionAllowed) {
   const apiKey = readApiKey(configOrKey);
   const info = await providerFetch(`https://api.shodan.io/api-info?key=${encodeURIComponent(apiKey)}`);
   if (info.status === 401 || info.status === 403) return { ok: false, message: 'Invalid API key', limited: false };
   if (!info.ok) return { ok: false, message: `Validation failed (${info.status})`, limited: false };
+  // Optional synchronous guard for the second request in this validation chain.
+  assertTransmissionAllowed?.();
   const hostProbe = await providerFetch(`https://api.shodan.io/shodan/host/8.8.8.8?key=${encodeURIComponent(apiKey)}`);
   if (hostProbe.ok) return { ok: true, message: 'API key valid', limited: false };
   if (hostProbe.status === 401 || hostProbe.status === 403) return { ok: true, message: 'API key valid, but host lookup access is limited', limited: true };

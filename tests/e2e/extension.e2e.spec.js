@@ -19,6 +19,57 @@ test.describe('Chrome extension E2E', () => {
     await server?.close();
   });
 
+  test('IPv6 scan, panel, copy and manual history stay canonical and local without keys', async () => {
+    const extension = await launchExtensionContext();
+    const { context, extensionId } = extension;
+    try {
+      const worker = await getServiceWorker(context);
+      await worker.evaluate(() => {
+        globalThis.ipv6Requests = [];
+        globalThis.fetch = async (url) => { ipv6Requests.push(String(url)); throw new Error('Unexpected fetch'); };
+      });
+      const external = [];
+      context.on('request', (request) => {
+        if (/^https?:/.test(request.url()) && !request.url().startsWith(server.baseUrl)) external.push(request.url());
+      });
+      const page = await openFixturePage(context, server.urlFor('/ipv6-iocs.html'));
+      const original = 'Before [2001:0DB8:0000:0000:0000:0000:0000:0001], ::ffff:192.0.2.1, ::1 and ::. URL https://[2001:db8::1]/a.';
+      await expect(page.locator('#report .mustela-highlight')).toHaveCount(5);
+      await expect(page.locator('#report')).toHaveText(original);
+      await expect(page.locator('#invalid .mustela-highlight, textarea .mustela-highlight, [contenteditable] .mustela-highlight, #report a')).toHaveCount(0);
+      expect(await worker.evaluate(() => ipv6Requests)).toEqual([]);
+      expect(external).toEqual([]);
+      await page.locator('#report .mustela-highlight').first().click();
+      await expect(page.locator('.mustela-panel')).toContainText('2001:db8::1');
+      await expect(page.locator('.mustela-panel')).toContainText('No decision yet');
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      await page.getByRole('button', { name: 'Copy IOC', exact: true }).click();
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('2001:db8::1');
+      let popup = await bindPopupToTab(context, await openPopup(context, extensionId), page);
+      await expect(popup.locator('#historyList')).toContainText('2001:db8::1');
+      await popup.locator('#manualInput').fill('2001:0DB8:0:0:0:0:0:1');
+      await expect(popup.locator('#manualTypeChip')).toHaveText('IP');
+      await popup.locator('#manualInvestigateBtn').click();
+      await expect(page.locator('.mustela-panel')).toContainText('2001:db8::1');
+      const history = await worker.evaluate(async () => (await chrome.storage.local.get('mustela_history')).mustela_history);
+      expect(history.filter((entry) => entry.ioc.normalized === '2001:db8::1')).toHaveLength(1);
+      expect(await worker.evaluate(() => ipv6Requests)).toEqual([]);
+      expect(external).toEqual([]);
+      await expect(page).toHaveURL(server.urlFor('/ipv6-iocs.html'));
+      popup = await bindPopupToTab(context, await openPopup(context, extensionId), page);
+      await popup.locator('#toggleBtn').click();
+      await expect(page.locator('.mustela-highlight')).toHaveCount(0);
+      await expect(page.locator('#report')).toHaveText(original);
+      await page.reload();
+      await expect(page.locator('.mustela-highlight')).toHaveCount(0);
+      await expect(page.locator('#report')).toHaveText(original);
+      await popup.locator('#toggleBtn').click();
+      await expect(page.locator('#report .mustela-highlight')).toHaveCount(5);
+    } finally {
+      await extension.close();
+    }
+  });
+
   test('detects and highlights IOC values, then opens the in-page panel from a highlight', async () => {
     const extension = await launchExtensionContext();
     const { context, extensionId } = extension;

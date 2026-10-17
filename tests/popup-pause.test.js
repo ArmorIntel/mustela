@@ -1,0 +1,84 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createPauseController } from '../src/popup/state.js';
+
+const ok = (paused) => ({ ok: true, data: { paused } });
+test('reopened popup reads command failure alongside confirmed state and retries the shared transition', async () => {
+  let failure = 'Unable to save pause state. Please retry.';
+  let paused = false;
+  let view;
+  const controller = createPauseController(async (type, payload) => {
+    if (type === 'SET_PAUSE_STATE') { paused = payload.paused; failure = ''; }
+    return { ...ok(paused), ...(failure ? { transitionError: failure } : {}) };
+  }, (value) => { view = value; });
+  await controller.refresh();
+  assert.equal(view.paused, false);
+  assert.match(view.error, /retry/);
+  await controller.retry();
+  assert.equal(view.paused, true);
+  assert.equal(view.error, '');
+});
+test('popup shows only confirmed state, keeps failed OFF retryable and reconciles concurrent changes', async () => {
+  let paused = false;
+  let fail = true;
+  let view;
+  const controller = createPauseController(async (type, payload) => {
+    if (type === 'SET_PAUSE_STATE') {
+      assert.equal(view.paused, false, 'OFF is not optimistic');
+      assert.equal(view.pending, true);
+      if (fail) return { ok: false, error: 'Storage unavailable. Please retry.' };
+      paused = payload.paused;
+    }
+    return ok(paused);
+  }, (value) => { view = value; });
+  await controller.refresh();
+  assert.equal(view.paused, false);
+  await controller.toggle();
+  assert.equal(view.paused, false);
+  assert.equal(view.pending, false);
+  assert.match(view.error, /retry/);
+  fail = false;
+  await controller.retry();
+  assert.equal(view.paused, true);
+  assert.equal(view.error, '');
+  paused = false;
+  await controller.refresh();
+  assert.equal(view.paused, false);
+});
+
+test('retry is inert without an error, including after confirmed OFF', async () => {
+  let paused = false;
+  let writes = 0;
+  const controller = createPauseController(async (type, payload) => {
+    if (type === 'SET_PAUSE_STATE') { writes++; paused = payload.paused; }
+    return ok(paused);
+  }, () => {});
+  await controller.refresh();
+  await controller.retry();
+  assert.equal(writes, 0);
+  await controller.toggle();
+  assert.equal(paused, true);
+  await controller.retry();
+  assert.equal(writes, 1);
+  assert.equal(paused, true);
+});
+
+test('stale popup reads cannot overwrite newer confirmations; failed reads stay unknown and retryable', async () => {
+  let view;
+  let finish;
+  let calls = 0;
+  const controller = createPauseController(() => {
+    if (++calls === 1) return new Promise((resolve) => { finish = resolve; });
+    return Promise.resolve(ok(true));
+  }, (value) => { view = value; });
+  const stale = controller.refresh();
+  await controller.refresh();
+  finish(ok(false));
+  await stale;
+  assert.equal(view.paused, true);
+  const unavailable = createPauseController(async () => { throw new Error('Offline'); }, (value) => { view = value; });
+  await unavailable.refresh();
+  assert.equal(view.paused, null);
+  assert.match(view.error, /Offline/);
+  assert.equal(view.pending, false);
+});
