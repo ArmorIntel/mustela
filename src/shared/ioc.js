@@ -15,7 +15,7 @@ const SUBNET_CANDIDATE = /\b(?:\d{1,3}\.){3}\d{1,3}\/(?:[0-9]|[12][0-9]|3[0-2])\
 const ASN_CANDIDATE = /\bAS(?:[1-9]\d{0,9})\b/gi;
 const URL_CANDIDATE = /\b(?:https?|hxxps?)(?::|\[:\])\/\/[^\s<>'"`]+/gi;
 const HASH_CANDIDATE = /\b[a-fA-F0-9]{32}\b|\b[a-fA-F0-9]{40}\b|\b[a-fA-F0-9]{64}\b/g;
-const DOMAIN_CANDIDATE = /\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.|\[\.\]|\(\.\)))+(?:[a-zA-Z]{2,63})\b/g;
+const DOMAIN_LABEL_CANDIDATE = /\b[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.|\[\.\]|\(\.\))/g;
 
 const DOMAIN_EXCLUSIONS = new Set(['microsoft.com', 'example.com', 'localhost']);
 const DOMAIN_TLD_EXCLUSIONS = new Set(['local', 'internal', 'exe', 'dll', 'bin', 'tmp', 'log', 'conf', 'ps1', 'bat', 'sh', 'js']);
@@ -139,12 +139,27 @@ export function detectHashType(value) {
   return null;
 }
 
-function pushUnique(results, item) {
-  // Higher-precedence candidates are collected first on original source offsets.
-  if (results.some((entry) => item.index < entry.index + entry.length && entry.index < item.index + item.length)) return;
-  if (!results.some((entry) => entry.type === item.type && entry.normalized === item.normalized && entry.index === item.index)) {
-    results.push(item);
+function* domainCandidates(text) {
+  // Find bounded labels once, retaining the last valid TLD in each contiguous
+  // chain. This is the same leftmost/greedy match as (LABEL DOT)+ TLD, without
+  // retrying every suffix when thousands of labels have no valid TLD.
+  // Invalid labels split chains, so a valid domain after one is still found.
+  const tld = /[a-zA-Z]{2,63}\b/y;
+  let start = -1;
+  let chainEnd = -1;
+  let matchEnd = -1;
+  for (const label of text.matchAll(DOMAIN_LABEL_CANDIDATE)) {
+    if (label.index !== chainEnd) {
+      if (matchEnd >= 0) yield Object.assign([text.slice(start, matchEnd)], { index: start });
+      start = label.index;
+      matchEnd = -1;
+    }
+    chainEnd = label.index + label[0].length;
+    tld.lastIndex = chainEnd;
+    const suffix = tld.exec(text);
+    if (suffix) matchEnd = chainEnd + suffix[0].length;
   }
+  if (matchEnd >= 0) yield Object.assign([text.slice(start, matchEnd)], { index: start });
 }
 
 function getDomainTld(value) {
@@ -208,6 +223,19 @@ export function parseIocsFromText(text, options = {}) {
   const results = [];
   if (!text) return results;
   const mode = resolveDetectionMode(options.mode);
+  // Byte occupancy preserves source-range precedence without pairwise scans.
+  const occupied = new Uint8Array(text.length);
+  const colonOccupied = new Uint8Array(text.length);
+  const emailOccupied = new Uint8Array(text.length);
+  const overlaps = (table, index, length) => {
+    for (let i = index; i < index + length; i++) if (table[i]) return true;
+    return false;
+  };
+  const pushUnique = (target, item) => {
+    if (overlaps(occupied, item.index, item.length)) return;
+    occupied.fill(1, item.index, item.index + item.length);
+    target.push(item);
+  };
 
   // Reserve whole address-like tokens, including invalid or unsupported ones.
   // Never promote their local identifiers or domain suffixes independently.
@@ -215,6 +243,7 @@ export function parseIocsFromText(text, options = {}) {
   // unsupported quoted local part and expose nested provider-compatible IOCs.
   const emailTokens = [...text.matchAll(/"(?:\\[^\r\n]|[^"\\\r\n])*"@[^\s<>,;:]*|(?:\(\.\)|[^\s<>(),;:])+/g)]
     .filter(([raw]) => raw.includes('@'));
+  for (const token of emailTokens) emailOccupied.fill(1, token.index, token.index + token[0].length);
   const emails = [];
   for (const token of emailTokens) {
     const raw = token[0].replace(/\.+$/, '');
@@ -245,7 +274,8 @@ export function parseIocsFromText(text, options = {}) {
     const prefix = raw.slice(0, raw.lastIndexOf(':', raw.indexOf('.')) + 1);
     return /^[0-9a-f:]+:$/i.test(prefix);
   });
-  const insideColonToken = (match) => colonTokens.some((token) => match.index >= token.index && match.index < token.index + token[0].length);
+  for (const token of colonTokens) colonOccupied.fill(1, token.index, token.index + token[0].length);
+  const insideColonToken = (match) => !!colonOccupied[match.index];
   for (const token of colonTokens) {
     const raw = token[0].replace(/\.+$/, '');
     const normalized = canonicalIpv6(raw);
@@ -270,8 +300,7 @@ export function parseIocsFromText(text, options = {}) {
     if (insideColonToken(match)) continue;
     const raw = match[0];
     if (!isValidIpv4(normalizeIoc(raw, IOC_TYPES.IP))) continue;
-    const insideSubnet = results.some((entry) => entry.type === IOC_TYPES.SUBNET && (match.index ?? 0) >= entry.index && (match.index ?? 0) < entry.index + entry.length);
-    if (insideSubnet) continue;
+    if (occupied[match.index]) continue;
     const normalized = normalizeIoc(raw, IOC_TYPES.IP);
     pushUnique(results, { type: IOC_TYPES.IP, raw, normalized, index: match.index ?? 0, length: raw.length, confidence: scoreDetectionConfidence(IOC_TYPES.IP, normalized) });
   }
@@ -290,17 +319,16 @@ export function parseIocsFromText(text, options = {}) {
     pushUnique(results, { type, raw, normalized, index: match.index ?? 0, length: raw.length, confidence: scoreDetectionConfidence(type, normalized) });
   }
 
-  for (const match of text.matchAll(DOMAIN_CANDIDATE)) {
+  for (const match of domainCandidates(text)) {
     const raw = match[0];
     const normalized = normalizeIoc(raw, IOC_TYPES.DOMAIN);
-    const insideUrl = results.some((entry) => entry.type === IOC_TYPES.URL && (match.index ?? 0) >= entry.index && (match.index ?? 0) < entry.index + entry.length);
-    if (insideUrl) continue;
+    if (occupied[match.index]) continue;
     if (normalized.length > 253 || isLikelyExcludedDomain(raw, text, match.index ?? 0, { mode })) continue;
     pushUnique(results, { type: IOC_TYPES.DOMAIN, raw, normalized, index: match.index ?? 0, length: raw.length, confidence: scoreDetectionConfidence(IOC_TYPES.DOMAIN, normalized) });
   }
 
   return results.filter((ioc) => [IOC_TYPES.EMAIL, IOC_TYPES.URL].includes(ioc.type)
-    || !emailTokens.some((token) => ioc.index < token.index + token[0].length && token.index < ioc.index + ioc.length))
+    || !overlaps(emailOccupied, ioc.index, ioc.length))
     .sort((a, b) => a.index - b.index);
 }
 
