@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-17
+
 ### Added
 - Chrome-only global pause command, assignable at `chrome://extensions/shortcuts`, sharing the popup's authoritative transition. Textual ON/OFF toolbar badge and action title restore saved state after restart; failed command saves stay retryable in the popup without false OFF confirmation. No imposed shortcut, additional permission or outgoing data.
 - Detect ASCII dot-atom email addresses as distinct IOC, preserving local-part case and source ranges with domain-only normalization. Keep local investigation, notes, history and copy/export without nested indicators or incompatible provider/MISP pivots. Optional Analyst Assist summaries and explicit correlation can include email and page context; no new permission or recipient.
