@@ -70,7 +70,11 @@ Then load `dist/chrome` with **Load unpacked** in `chrome://extensions` (same st
 
 ## Global pause
 
-Use the named **Mustela ON — pause / Mustela OFF — resume** button in the popup to control all pages, independently of the page-exclusion button. The control works with the keyboard, shows only the confirmed background state, stays synchronized across open/reopened popups, and offers a retry if saving fails. Existing installations default to ON. No badge or keyboard shortcut is included.
+Use the named **Mustela ON — pause / Mustela OFF — resume** button in the popup to control all pages, independently of the page-exclusion button. The control works with the keyboard, shows only the confirmed background state, stays synchronized across open/reopened popups, and offers a retry if saving fails. Existing installations default to ON.
+
+Assign **Toggle Mustela global pause** at `chrome://extensions/shortcuts` to use the same control without opening the popup. No shortcut is imposed and the command is not global outside Chrome. If no shortcut is assigned or Chrome reports a conflict, use the popup button and its shortcut-settings link to assign another combination.
+
+The toolbar badge and action title show **ON** (no global pause; URL/highlighting preferences still apply) or **OFF** (globally paused), not just a color. ON does not mean highlighting is active on every URL. Saved OFF is restored after worker/browser restart; no assumed ON is published before the saved state is read. Rapid commands are processed in order with popup changes. A failed save leaves the confirmed badge unchanged and exposes a retryable error in open/reopened popups; the command does not report a false OFF. This transient error is cleared by the next successful change or worker restart, not stored as a second pause state.
 
 OFF immediately removes IOC highlights and detection indicators from loaded pages, closes investigation panels, and suspends scans even when the page changes. New/reloaded pages and a restarted background worker respect the saved pause. ON resumes detection only where URL rules allow it and highlighting was already enabled; it never reopens a panel or replays an investigation. Existing keys, preferences, history, and cache are preserved.
 

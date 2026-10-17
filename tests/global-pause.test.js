@@ -54,7 +54,7 @@ test('confirmed transitions broadcast to every tab despite restricted failures, 
   failWrite = true;
   assert.equal((await pause(false)).ok, false);
   assert.deepEqual(delivered, []);
-  assert.equal(notifications.length, 1);
+  assert.deepEqual(notifications.map((message) => message.type), ['PAUSE_STATE_UPDATED', 'PAUSE_CHANGE_FAILED']);
 });
 function deferred() {
   let resolve;

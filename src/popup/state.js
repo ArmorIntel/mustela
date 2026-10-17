@@ -12,13 +12,13 @@ export function createPauseController(send, render) {
     if (!response?.ok || typeof response.data?.paused !== 'boolean') {
       throw new Error(response?.error || 'Unable to read pause state. Please retry.');
     }
-    return response.data.paused;
+    return { paused: response.data.paused, error: response.transitionError || '' };
   };
   async function refresh() {
     const request = ++revision;
     try {
-      const paused = await read();
-      if (request === revision) update({ paused, error: '' });
+      const confirmed = await read();
+      if (request === revision) update(confirmed);
     } catch (error) {
       if (request === revision) update({ error: error.message || String(error) });
     }

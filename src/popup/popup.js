@@ -652,7 +652,11 @@ function mountGlobalPause() {
   button.addEventListener('click', () => controller.toggle());
   retry.addEventListener('click', () => controller.retry());
   chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type === 'PAUSE_STATE_UPDATED') controller.refresh();
+    if (['PAUSE_STATE_UPDATED', 'PAUSE_CHANGE_FAILED'].includes(message?.type)) controller.refresh();
+  });
+  document.getElementById('pauseShortcuts').addEventListener('click', (event) => {
+    event.preventDefault();
+    chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
   });
   controller.refresh();
 }

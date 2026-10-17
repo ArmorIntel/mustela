@@ -68,6 +68,8 @@ The background checks the Chrome-supplied sender ID and URL before processing me
 
 ### Global transmission pause
 
+The Chrome-only `toggle-global-pause` command uses the same serialized, durable transition as the popup, including without API keys. Assign it at `chrome://extensions/shortcuts`; no default or system-global shortcut is imposed. The toolbar badge and action title reflect confirmed ON/OFF after successful saves and startup restoration. ON means no global pause, not permission to highlight every URL. Command failures keep the last confirmed state and expose a retryable error to the popup (in worker memory only, cleared on success/restart). The command, badge, title and shortcut-settings link add no permissions, recipients or outgoing data.
+
 The background owns a global pause state stored separately as `mustela_paused` in `chrome.storage.local`; absence means ON (`paused: false`). It is independent of highlighting, URL rules, keys, and provider/Analyst Assist preferences. The popup's named global ON/OFF button is separate from URL exclusion, keyboard-accessible, and synchronized to this confirmed state. Failed saves show an error and retry, not an OFF success.
 
 Confirmed OFF is propagated to loaded pages: highlights and detection indicators are removed, panels close, and DOM changes do not restart scanning. Content initialization fails closed until the background confirms ON, including new/reloaded pages and worker restarts. Old panel opens or lookup replies cannot reopen or repopulate panels while paused; an OFF/ON cycle also invalidates pending replies. An unavailable or non-scriptable tab does not prevent notification of the others.
