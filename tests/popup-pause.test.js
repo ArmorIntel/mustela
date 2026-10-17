@@ -3,6 +3,21 @@ import assert from 'node:assert/strict';
 import { createPauseController } from '../src/popup/state.js';
 
 const ok = (paused) => ({ ok: true, data: { paused } });
+test('reopened popup reads command failure alongside confirmed state and retries the shared transition', async () => {
+  let failure = 'Unable to save pause state. Please retry.';
+  let paused = false;
+  let view;
+  const controller = createPauseController(async (type, payload) => {
+    if (type === 'SET_PAUSE_STATE') { paused = payload.paused; failure = ''; }
+    return { ...ok(paused), ...(failure ? { transitionError: failure } : {}) };
+  }, (value) => { view = value; });
+  await controller.refresh();
+  assert.equal(view.paused, false);
+  assert.match(view.error, /retry/);
+  await controller.retry();
+  assert.equal(view.paused, true);
+  assert.equal(view.error, '');
+});
 test('popup shows only confirmed state, keeps failed OFF retryable and reconciles concurrent changes', async () => {
   let paused = false;
   let fail = true;

@@ -6,6 +6,56 @@ import { addHistory, clearCache, clearDetectedForTab, clearDisabledPages, clearH
 import { createTransmissionGate, pauseFailure } from './pause.js';
 
 const transmissions = createTransmissionGate();
+let transitionError = '';
+
+async function updateAction(state) {
+  if (!chrome.action) return;
+  await chrome.action.setBadgeText({ text: state.paused ? 'OFF' : 'ON' });
+  await chrome.action.setTitle({ title: state.paused
+    ? 'Mustela OFF — globally paused'
+    : 'Mustela ON — not globally paused; page preferences apply' });
+}
+
+async function notifyPause(state) {
+  const notification = { type: 'PAUSE_STATE_UPDATED', payload: state };
+  try {
+    const tabs = await chrome.tabs.query({});
+    await Promise.allSettled(tabs.filter((tab) => typeof tab.id === 'number')
+      .map((tab) => chrome.tabs.sendMessage(tab.id, notification)));
+  } catch {}
+  try { await chrome.runtime.sendMessage(notification); } catch {}
+}
+
+// Serialize the toggle read, durable transition and UI publication together.
+// Startup never publishes an assumed ON before reading durable state.
+let pauseTransition = chrome.action
+  ? transmissions.getState().then(updateAction).catch(() => undefined)
+  : Promise.resolve();
+function changePause(paused, toggle = false) {
+  const result = pauseTransition.then(async () => {
+    try {
+      const target = toggle ? !(await transmissions.getState()).paused : paused;
+      const state = await transmissions.setState(target);
+      transitionError = '';
+      await updateAction(state);
+      await notifyPause(state);
+      return { ok: true, data: state };
+    } catch (error) {
+      transitionError = pauseFailure(error).error;
+      // Wake popups without announcing a false state change to pages.
+      try { await chrome.runtime.sendMessage({ type: 'PAUSE_CHANGE_FAILED' }); } catch {}
+      throw error;
+    }
+  });
+  pauseTransition = result.catch(() => undefined);
+  return result;
+}
+
+function handlePauseCommand(command) {
+  if (command !== 'toggle-global-pause') return;
+  return changePause(undefined, true).catch(pauseFailure);
+}
+chrome.commands?.onCommand.addListener(handlePauseCommand);
 const TRANSMISSION_MESSAGES = new Set(['LOOKUP_IOC', 'OPEN_EXTERNAL_PROVIDER', 'CORRELATE_IOCS', 'ADD_IOC_TO_MISP', 'TEST_API_KEY']);
 
 function cleanLegacyDetection() {
@@ -185,20 +235,9 @@ async function handleMessage(message, sender) {
       return { ok: true, data: await getDetectedForTab(tabId) };
     }
     case 'GET_PAUSE_STATE':
-      return { ok: true, data: await transmissions.getState() };
-    case 'SET_PAUSE_STATE': {
-      const state = await transmissions.setState(message.payload?.paused);
-      const notification = { type: 'PAUSE_STATE_UPDATED', payload: state };
-      // Restricted/closed tabs must not prevent other pages receiving the transition.
-      try {
-        const tabs = await chrome.tabs.query({});
-        await Promise.allSettled(tabs.filter((tab) => typeof tab.id === 'number').map(async (tab) => {
-          await chrome.tabs.sendMessage(tab.id, notification);
-        }));
-      } catch {}
-      try { await chrome.runtime.sendMessage(notification); } catch {}
-      return { ok: true, data: state };
-    }
+      return { ok: true, data: await transmissions.getState(), ...(transitionError ? { transitionError } : {}) };
+    case 'SET_PAUSE_STATE':
+      return changePause(message.payload?.paused);
     case 'GET_CONTENT_SETTINGS':
       return { ok: true, data: contentSettings(await getSettings()) };
     case 'GET_SETTINGS':

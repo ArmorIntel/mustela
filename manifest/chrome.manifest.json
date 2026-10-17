@@ -15,6 +15,9 @@
     "service_worker": "src/background/background.js",
     "type": "module"
   },
+  "commands": {
+    "toggle-global-pause": { "description": "Toggle Mustela global pause" }
+  },
   "action": {
     "default_title": "Mustela",
     "default_popup": "src/popup/popup.html"
