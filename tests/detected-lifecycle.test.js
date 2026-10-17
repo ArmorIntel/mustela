@@ -15,6 +15,7 @@ const area = (store) => ({
 globalThis.chrome = {
   storage: { local: area(local), session: area(session) },
   runtime: {
+    id: 'test-extension',
     onMessage: { addListener(fn) { message = fn; } },
     onInstalled: { addListener(fn) { installed = fn; } }
   },
@@ -26,7 +27,9 @@ globalThis.chrome = {
 };
 await import('../src/background/background.js');
 const iocs = [{ type: 'ip', normalized: '8.8.8.8', sourceContext: { pageUrl: 'https://report.test', pageTitle: 'Report' } }];
-const send = (type, payload, tabId = 7) => new Promise((resolve) => message({ type, payload }, { tab: { id: tabId } }, resolve));
+const send = (type, payload, tabId = 7) => new Promise((resolve) => message({ type, payload }, type === 'PAGE_IOCS_DETECTED'
+  ? { id: 'test-extension', url: 'https://report.test/', tab: { id: tabId, url: 'https://report.test/' } }
+  : { id: 'test-extension', url: 'chrome-extension://test-extension/src/popup/popup.html' }, resolve));
 
 test('worker startup and update remove legacy detection without touching history', async () => {
   await new Promise((resolve) => setImmediate(resolve));

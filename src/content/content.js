@@ -951,7 +951,7 @@ async function bootstrap() {
     extensionDisabled = !!disabledResponse?.data;
   } catch {}
   try {
-    const settingsResponse = await sendRuntimeMessage({ type: 'GET_SETTINGS' });
+    const settingsResponse = await sendRuntimeMessage({ type: 'GET_CONTENT_SETTINGS' });
     highlightEnabled = settingsResponse?.data?.highlightEnabled !== false;
     detectionMode = settingsResponse?.data?.detectionMode === 'strict' ? 'strict' : 'balanced';
   } catch {}

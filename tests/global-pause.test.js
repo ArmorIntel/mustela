@@ -11,7 +11,7 @@ let beforeSet = async () => {};
 const navigations = [];
 const panels = [];
 globalThis.chrome = {
-  runtime: { onInstalled: { addListener() {} }, onMessage: { addListener(fn) { listener = fn; } } },
+  runtime: { id: 'test-extension', onInstalled: { addListener() {} }, onMessage: { addListener(fn) { listener = fn; } } },
   contextMenus: { onClicked: { addListener(fn) { menu = fn; } } },
   tabs: {
     onRemoved: { addListener() {} },
@@ -32,7 +32,7 @@ globalThis.chrome = {
 };
 let worker = 0;
 async function restart() { await import(`../src/background/background.js?worker=${++worker}`); }
-const send = (type, payload) => new Promise((resolve) => listener({ type, payload }, {}, resolve));
+const send = (type, payload) => new Promise((resolve) => listener({ type, payload }, { id: 'test-extension', url: 'chrome-extension://test-extension/src/popup/popup.html' }, resolve));
 const ip = { type: 'ip', normalized: '8.8.8.8' };
 const pause = (paused) => send('SET_PAUSE_STATE', { paused });
 test('confirmed transitions broadcast to every tab despite restricted failures, but failed writes do not broadcast', async (t) => {

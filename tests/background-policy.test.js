@@ -41,7 +41,7 @@ let menuListener;
 const navigations = [];
 const panels = [];
 globalThis.chrome = {
-  runtime: { onInstalled: { addListener() {} }, onMessage: { addListener(fn) { listener = fn; } } },
+  runtime: { id: 'test-extension', onInstalled: { addListener() {} }, onMessage: { addListener(fn) { listener = fn; } } },
   contextMenus: { onClicked: { addListener(fn) { menuListener = fn; } } },
   tabs: {
     onRemoved: { addListener() {} },
@@ -87,7 +87,7 @@ test('IPv6 selection and lookup keep canonical history and isolate provider fail
   }
 });
 
-const send = (type, payload) => new Promise((resolve) => listener({ type, payload }, {}, resolve));
+const send = (type, payload) => new Promise((resolve) => listener({ type, payload }, { id: 'test-extension', url: 'chrome-extension://test-extension/src/popup/popup.html' }, resolve));
 const ip = (normalized) => ({ type: 'ip', normalized });
 function configure({ keys = true, enabled = true, misp = false } = {}) {
   store = { mustela_settings: {

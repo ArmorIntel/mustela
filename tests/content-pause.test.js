@@ -29,7 +29,7 @@ function harness() {
       onMessage: { addListener: (fn) => { state.listener = fn; } },
       async sendMessage(message) {
         if (message.type === 'GET_PAUSE_STATE') return state.read ? state.read() : { ok: true, data: { paused: state.paused } };
-        if (message.type === 'GET_SETTINGS') return { ok: true, data: {} };
+        if (message.type === 'GET_CONTENT_SETTINGS') return { ok: true, data: {} };
         if (message.type === 'IS_PAGE_DISABLED') return { ok: true, data: false };
         if (message.type === 'LOOKUP_IOC') { state.lookup++; return state.response.promise; }
         return { ok: true };
