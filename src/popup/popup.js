@@ -21,6 +21,26 @@ const currentPageState = {
 
 const CURRENT_PAGE_PREVIEW_LIMIT = 5;
 
+const listActions = new WeakMap();
+
+function mountListActions() {
+  for (const id of ['iocList', 'historyList', 'historyFilters', 'historyShortcuts']) {
+    const list = document.getElementById(id);
+    const dispatch = (event) => {
+      const target = event.target.closest('button, [role="button"]');
+      if (!target || !list.contains(target) || target.disabled) return;
+      // Native buttons already synthesize clicks for Enter and Space.
+      if (event.type === 'keydown') {
+        const copyKey = event.key === 'Enter' || event.key === ' ';
+        if (target.tagName === 'BUTTON' || !copyKey) return;
+      }
+      listActions.get(target)?.(event);
+    };
+    list.addEventListener('click', dispatch);
+    list.addEventListener('keydown', dispatch);
+  }
+}
+
 function render(disabled) {
   const btn = document.getElementById('toggleBtn');
   btn.classList.remove('power-on', 'power-off');
@@ -134,10 +154,7 @@ function armCopyFeedback(element, { idleLabel, successLabel = 'Copied', duration
       delete element.dataset.copyTimer;
     }, duration));
   };
-  element.addEventListener('click', handleCopy);
-  element.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') return handleCopy(event);
-  });
+  listActions.set(element, handleCopy);
 }
 
 function buildActionIcon(kind) {
@@ -171,7 +188,7 @@ function renderCurrentPageList(onInvestigate, onReopen) {
   const items = Array.isArray(currentPageState.items) ? currentPageState.items : [];
   const visible = currentPageState.expanded ? items : items.slice(0, CURRENT_PAGE_PREVIEW_LIMIT);
 
-  list.innerHTML = '';
+  list.replaceChildren();
   visible.forEach((ioc) => {
     const li = document.createElement('li');
     li.className = `ioc-item${ioc?.alreadyInvestigated ? ' investigated' : ''}`;
@@ -215,13 +232,13 @@ function renderCurrentPageList(onInvestigate, onReopen) {
       reopenBtn.type = 'button';
       reopenBtn.className = 'ioc-action secondary';
       reopenBtn.textContent = 'Open details';
-      reopenBtn.addEventListener('click', () => onReopen(ioc?.lastInvestigation || ioc));
+      listActions.set(reopenBtn, () => onReopen(ioc?.lastInvestigation || ioc));
 
       statusRow.append(status, reopenBtn);
       main.append(statusRow);
     } else {
       const investigateBtn = createIconActionButton({ kind: 'investigate', label: 'Investigate IOC', extraClass: 'primary' });
-      investigateBtn.addEventListener('click', () => onInvestigate(ioc));
+      listActions.set(investigateBtn, () => onInvestigate(ioc));
       tools.append(investigateBtn);
     }
 
@@ -277,13 +294,14 @@ function renderSummary(items, disabled, onInvestigate = () => {}, onReopen = () 
 
 async function getCurrentPageIocs(tabId) {
   try {
-    const detectedRes = await send('GET_DETECTED_IOCS', { tabId });
-    if (Array.isArray(detectedRes?.data) && detectedRes.data.length) return detectedRes.data;
+    const pageRes = await chrome.tabs.sendMessage(tabId, { type: 'GET_PAGE_IOCS' });
+    // An empty confirmed snapshot is a result, not a reason to scan again.
+    if (pageRes?.ok && Array.isArray(pageRes.data)) return pageRes.data;
   } catch {}
 
   try {
-    const pageRes = await chrome.tabs.sendMessage(tabId, { type: 'GET_PAGE_IOCS' });
-    if (Array.isArray(pageRes?.data) && pageRes.data.length) return pageRes.data;
+    const detectedRes = await send('GET_DETECTED_IOCS', { tabId });
+    if (detectedRes?.ok && Array.isArray(detectedRes.data) && detectedRes.data.length) return detectedRes.data;
   } catch {}
 
   try {
@@ -297,7 +315,7 @@ async function getCurrentPageIocs(tabId) {
 function renderHistoryFilters(history, currentUrl, sameIocEntry, onChange) {
   const container = document.getElementById('historyFilters');
   if (!container) return;
-  container.innerHTML = '';
+  container.replaceChildren();
 
   const samePageCount = history.filter((entry) => entry?.pageUrl && entry.pageUrl === currentUrl).length;
   const pinnedCount = history.filter((entry) => entry?.pinned).length;
@@ -319,7 +337,7 @@ function renderHistoryFilters(history, currentUrl, sameIocEntry, onChange) {
     btn.type = 'button';
     btn.className = `history-filter${historyState.filter === filter.key ? ' active' : ''}`;
     btn.textContent = filter.label;
-    btn.addEventListener('click', () => {
+    listActions.set(btn, () => {
       historyState.filter = filter.key;
       onChange();
     });
@@ -330,7 +348,7 @@ function renderHistoryFilters(history, currentUrl, sameIocEntry, onChange) {
 function renderHistoryShortcuts(currentUrl, samePageEntry, sameIocEntry, openHistoryInvestigation) {
   const container = document.getElementById('historyShortcuts');
   if (!container) return;
-  container.innerHTML = '';
+  container.replaceChildren();
 
   const shortcuts = [];
   if (samePageEntry) shortcuts.push({ label: 'Open same page', entry: samePageEntry });
@@ -342,7 +360,7 @@ function renderHistoryShortcuts(currentUrl, samePageEntry, sameIocEntry, openHis
     btn.className = 'history-shortcut';
     const suffix = entry?.normalized || entry?.ioc?.normalized || currentUrl || 'recent match';
     btn.textContent = `${label} · ${suffix}`;
-    btn.addEventListener('click', () => openHistoryInvestigation(entry));
+    listActions.set(btn, () => openHistoryInvestigation(entry));
     container.appendChild(btn);
   });
 }
@@ -353,7 +371,7 @@ function renderHistory(history, currentUrl, currentIocs, openHistoryInvestigatio
   const list = document.getElementById('historyList');
   if (!badge || !text || !list) return;
 
-  list.innerHTML = '';
+  list.replaceChildren();
   const recent = Array.isArray(history) ? history.slice(0, 8) : [];
   const samePageEntry = recent.find((entry) => entry?.pageUrl && entry.pageUrl === currentUrl) || null;
   const sameIocEntry = findSameIocHistory(recent, currentIocs);
@@ -415,13 +433,13 @@ function renderHistory(history, currentUrl, currentIocs, openHistoryInvestigatio
     openBtn.type = 'button';
     openBtn.className = 'history-open';
     openBtn.textContent = 'Open';
-    openBtn.addEventListener('click', () => openHistoryInvestigation(entry));
+    listActions.set(openBtn, () => openHistoryInvestigation(entry));
 
     const pinBtn = document.createElement('button');
     pinBtn.type = 'button';
     pinBtn.className = 'history-pin';
     pinBtn.textContent = entry?.pinned ? 'Unpin' : 'Pin';
-    pinBtn.addEventListener('click', () => toggleHistoryPin(entry));
+    listActions.set(pinBtn, () => toggleHistoryPin(entry));
 
     tools.append(openBtn, pinBtn);
     li.append(main, tools);
@@ -668,12 +686,18 @@ function mountGlobalPause() {
 
 async function init() {
   mountGlobalPause();
+  mountListActions();
+  const historyRead = send('GET_HISTORY').catch(() => null);
+  const settingsRead = send('GET_SETTINGS').catch(() => null);
   const tab = await getActiveTab();
   const url = tab?.url || '';
-  const disabledRes = await send('GET_DETECTION_POLICY', { url });
-  let disabled = !disabledRes?.ok || disabledRes.data.excluded;
-  document.getElementById('exclusionStatus').textContent = disabledRes?.data?.reason || (!disabledRes?.ok ? 'Unable to verify local exclusions. Actions remain subject to background checks.' : '');
-  render(disabled);
+  const policyRead = send('GET_DETECTION_POLICY', { url }).catch(() => null);
+  const iocRead = tab?.id ? getCurrentPageIocs(tab.id) : Promise.resolve([]);
+  let disabled = true;
+  let summaryReady = false;
+  let currentIocs = [];
+  let history = [];
+  let policyRefresh = 0;
 
   const openCurrentIocInvestigation = async (ioc) => {
     if (!tab?.id || !ioc) return;
@@ -693,19 +717,6 @@ async function init() {
 
   const hydrateCurrentIocs = (items, currentHistory = history) => mapCurrentIocsToHistory(currentHistory, items);
 
-  let currentIocs = tab?.id && !disabled ? await getCurrentPageIocs(tab.id) : [];
-
-  let history = [];
-  let settings = {};
-  try {
-    const [historyRes, settingsRes] = await Promise.all([send('GET_HISTORY'), send('GET_SETTINGS')]);
-    history = Array.isArray(historyRes?.data) ? historyRes.data : [];
-    settings = settingsRes?.data || {};
-  } catch {}
-
-  currentIocs = hydrateCurrentIocs(currentIocs, history);
-  renderSummary(currentIocs, disabled, openCurrentIocInvestigation, openHistoryInvestigation);
-
   const refreshHistory = async () => {
     try {
       const historyRes = await send('GET_HISTORY');
@@ -714,7 +725,7 @@ async function init() {
       history = [];
     }
     currentIocs = hydrateCurrentIocs(currentIocs, history);
-    renderSummary(currentIocs, disabled, openCurrentIocInvestigation, openHistoryInvestigation);
+    if (summaryReady) renderSummary(currentIocs, disabled, openCurrentIocInvestigation, openHistoryInvestigation);
     renderHistory(history, url, currentIocs, openHistoryInvestigation, toggleHistoryPin);
     renderInsight(findSameIocHistory(history, currentIocs) || history.find((entry) => entry?.pageUrl === url) || history[0] || null);
   };
@@ -725,10 +736,6 @@ async function init() {
     await refreshHistory();
   };
 
-  renderHistory(history, url, currentIocs, openHistoryInvestigation, toggleHistoryPin);
-  renderInsight(findSameIocHistory(history, currentIocs) || history.find((entry) => entry?.pageUrl === url) || history[0] || null);
-
-  let policyRefresh = 0;
   async function refreshExclusions() {
     const revision = ++policyRefresh;
     const response = await send('GET_DETECTION_POLICY', { url });
@@ -737,6 +744,7 @@ async function init() {
     const items = tab?.id && !disabled ? await getCurrentPageIocs(tab.id) : [];
     if (revision !== policyRefresh) return;
     currentIocs = hydrateCurrentIocs(items, history);
+    summaryReady = true;
     render(disabled);
     document.getElementById('exclusionStatus').textContent = response?.data?.reason || (!response?.ok ? 'Unable to verify local exclusions.' : '');
     renderSummary(currentIocs, disabled, openCurrentIocInvestigation, openHistoryInvestigation);
@@ -745,10 +753,6 @@ async function init() {
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === 'EXCLUSIONS_UPDATED') refreshExclusions();
   });
-
-  const llm = settings?.analystAssist || {};
-  const llmAvailable = !!(llm.enabled && llm.baseUrl && llm.apiKey && llm.model);
-  mountCorrelation(history, url, tab?.title || '', llmAvailable);
 
   mountManualLookup(tab, refreshHistory);
 
@@ -784,6 +788,41 @@ async function init() {
   document.getElementById('settingsBtn').addEventListener('click', async () => {
     await chrome.tabs.create({ url: chrome.runtime.getURL('src/welcome/welcome.html') });
   });
+
+  const renderHistoryState = () => {
+    renderHistory(history, url, currentIocs, openHistoryInvestigation, toggleHistoryPin);
+    renderInsight(findSameIocHistory(history, currentIocs) || history.find((entry) => entry?.pageUrl === url) || history[0] || null);
+  };
+  const policyHydration = policyRead.then((response) => {
+    if (policyRefresh) return;
+    disabled = !response?.ok || response.data.excluded;
+    render(disabled);
+    document.getElementById('exclusionStatus').textContent = response?.data?.reason || (!response?.ok ? 'Unable to verify local exclusions. Actions remain subject to background checks.' : '');
+    if (disabled) {
+      summaryReady = true;
+      renderSummary([], true, openCurrentIocInvestigation, openHistoryInvestigation);
+    }
+  });
+  const iocHydration = Promise.all([policyHydration, iocRead]).then(([, items]) => {
+    // A live exclusion update owns the state once startup has been superseded.
+    if (policyRefresh) return;
+    currentIocs = hydrateCurrentIocs(disabled ? [] : items, history);
+    summaryReady = true;
+    renderSummary(currentIocs, disabled, openCurrentIocInvestigation, openHistoryInvestigation);
+    renderHistoryState();
+  });
+  const historyHydration = historyRead.then((response) => {
+    history = Array.isArray(response?.data) ? response.data : [];
+    currentIocs = hydrateCurrentIocs(currentIocs, history);
+    if (summaryReady) renderSummary(currentIocs, disabled, openCurrentIocInvestigation, openHistoryInvestigation);
+    renderHistoryState();
+  });
+  const correlationHydration = Promise.all([historyHydration, settingsRead]).then(([, response]) => {
+    const llm = response?.data?.analystAssist || {};
+    const llmAvailable = !!(llm.enabled && llm.baseUrl && llm.apiKey && llm.model);
+    mountCorrelation(history, url, tab?.title || '', llmAvailable);
+  });
+  await Promise.all([iocHydration, correlationHydration]);
 }
 
 init();
