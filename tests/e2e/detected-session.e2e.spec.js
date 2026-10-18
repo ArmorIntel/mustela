@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startFixtureServer, launchExtensionContext, openFixturePage, openPopup, bindPopupToTab, getServiceWorker } from './support/extensionHarness.js';
+import { startFixtureServer, launchExtensionContext, openFixturePage, openPopup, bindPopupToTab, getServiceWorker, iocHighlights } from './support/extensionHarness.js';
 
 test('popup detection is session-only and tab closure/navigation release only the affected tab', async () => {
   const server = await startFixtureServer();
@@ -9,8 +9,8 @@ test('popup detection is session-only and tab closure/navigation release only th
     const worker = await getServiceWorker(context);
     const first = await openFixturePage(context, server.urlFor('/iocs.html'));
     const second = await openFixturePage(context, server.urlFor('/email-iocs.html'));
-    await expect(first.locator('.mustela-highlight').first()).toBeVisible();
-    await expect(second.locator('#report .mustela-highlight')).toHaveCount(3);
+    await expect.poll(() => iocHighlights(first).count()).toBeGreaterThan(0);
+    await expect.poll(() => iocHighlights(second, '#report').count()).toBe(3);
     const popup = await bindPopupToTab(context, await openPopup(context, extensionId), first);
     await expect(popup.locator('#iocList')).toContainText('8.8.8.8');
     const tabIds = await worker.evaluate(async (urls) => {

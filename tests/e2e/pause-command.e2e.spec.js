@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { launchExtensionContext, openPopup, getServiceWorker, startFixtureServer, openFixturePage } from './support/extensionHarness.js';
+import { launchExtensionContext, openPopup, getServiceWorker, startFixtureServer, openFixturePage, iocHighlights } from './support/extensionHarness.js';
 
 // CDP key events do not reach Chrome extension accelerators. Use native X11
 // delivery after assigning a shortcut through Chrome's own settings UI.
@@ -27,7 +27,7 @@ test('command without popup clears keyless pages and panel; popup, badge and res
   const server = await startFixtureServer();
   try {
     const page = await openFixturePage(extension.context, server.urlFor('/iocs.html'));
-    await expect(page.locator('.mustela-highlight').first()).toBeVisible();
+    await expect.poll(() => iocHighlights(page).count()).toBeGreaterThan(0);
     const worker = await getServiceWorker(extension.context);
     await worker.evaluate(async (url) => {
       const tab = (await chrome.tabs.query({})).find((tab) => tab.url === url);
@@ -36,7 +36,8 @@ test('command without popup clears keyless pages and panel; popup, badge and res
     await expect(page.locator('.mustela-panel')).toBeVisible();
     await assignShortcut(extension);
     await command(page);
-    await expect(page.locator('.mustela-highlight, .mustela-panel')).toHaveCount(0);
+    await expect.poll(() => iocHighlights(page).count()).toBe(0);
+    await expect(page.locator('.mustela-panel')).toHaveCount(0);
     expect(await badge(worker)).toBe('OFF');
     const popup = await openPopup(extension.context, extension.extensionId);
     await expect(control(popup)).toHaveText('Mustela OFF — resume');
@@ -47,10 +48,10 @@ test('command without popup clears keyless pages and panel; popup, badge and res
     await expect(control(reopened)).toHaveText('Mustela OFF — resume');
     const fresh = await openFixturePage(extension.context, server.urlFor('/iocs.html'));
     await expect.poll(() => fresh.locator('html').getAttribute('data-mustela-injected')).toBe('true');
-    await expect(fresh.locator('.mustela-highlight')).toHaveCount(0);
+    await expect.poll(() => iocHighlights(fresh).count()).toBe(0);
     await command(reopened);
     await expect(control(reopened)).toHaveText('Mustela ON — pause');
-    await expect(fresh.locator('.mustela-highlight').first()).toBeVisible();
+    await expect.poll(() => iocHighlights(fresh).count()).toBeGreaterThan(0);
     await expect(fresh.locator('.mustela-panel')).toHaveCount(0);
     expect(await badge(next)).toBe('ON');
   } finally { await extension.close(); await server.close(); }

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
-import { launchExtensionContext, startFixtureServer, openFixturePage, getServiceWorker } from './support/extensionHarness.js';
+import { launchExtensionContext, startFixtureServer, openFixturePage, getServiceWorker, iocHighlights } from './support/extensionHarness.js';
 
 const runtime = await fs.readFile(new URL('../../src/shared/ioc.content-runtime.js', import.meta.url), 'utf8');
 const content = await fs.readFile(new URL('../../src/content/content.js', import.meta.url), 'utf8');
@@ -60,20 +60,20 @@ test('loaded extension delivers one detection message and keeps its DOM stable o
       });
     });
     const page = await openFixturePage(extension.context, server.urlFor('/many-iocs.html'));
-    await expect(page.locator('.mustela-highlight').first()).toBeVisible();
+    await expect.poll(() => iocHighlights(page).count()).toBeGreaterThan(0);
     await expect.poll(() => worker.evaluate(() => detectionMessages.length)).toBe(1);
-    await page.evaluate(() => { window.mark = document.querySelector('.mustela-highlight'); window.indicator = document.querySelector('.mustela-page-indicator'); });
+    await page.evaluate(() => { window.mark = [...CSS.highlights.get('mustela-ioc')][0]; window.indicator = document.querySelector('.mustela-page-indicator'); });
     await page.waitForTimeout(10000);
     expect(await worker.evaluate(() => detectionMessages.length)).toBe(1);
-    expect(await page.evaluate(() => mark === document.querySelector('.mustela-highlight') && indicator === document.querySelector('.mustela-page-indicator'))).toBe(true);
+    expect(await page.evaluate(() => CSS.highlights.get('mustela-ioc').has(mark) && indicator === document.querySelector('.mustela-page-indicator'))).toBe(true);
   } finally { await extension.close(); await server.close(); }
 });
 
 test('static IOC page stays idle for ten seconds after initial scan', async ({ page }) => {
   await fixture(page);
-  await page.evaluate(() => { window.firstMark = document.querySelector('.mustela-highlight'); window.firstIndicator = document.querySelector('.mustela-page-indicator'); });
+  await page.evaluate(() => { window.firstMark = [...CSS.highlights.get('mustela-ioc')][0]; window.firstIndicator = document.querySelector('.mustela-page-indicator'); });
   await page.waitForTimeout(10000);
-  const result = await page.evaluate(() => ({ ...metrics, stable: firstMark === document.querySelector('.mustela-highlight') && firstIndicator === document.querySelector('.mustela-page-indicator') }));
+  const result = await page.evaluate(() => ({ ...metrics, stable: CSS.highlights.get('mustela-ioc').has(firstMark) && firstIndicator === document.querySelector('.mustela-page-indicator') }));
   console.log('static', JSON.stringify(result));
   expect(result.scans).toHaveLength(1);
   expect(result.messages).toHaveLength(1);
@@ -156,7 +156,8 @@ test('disabling highlights cancels a yielded scan and re-enabling rebuilds once'
   await expect.poll(() => page.evaluate(() => metrics.messages.at(-1).length)).toBe(0);
   const before = await page.evaluate(() => metrics.parsed.length);
   await page.waitForTimeout(1200);
-  await expect(page.locator('.mustela-highlight, .mustela-page-indicator')).toHaveCount(0);
+  expect(await iocHighlights(page).count()).toBe(0);
+  await expect(page.locator('.mustela-page-indicator')).toHaveCount(0);
   expect(await page.evaluate(() => metrics.parsed.length)).toBe(before);
   await page.evaluate(() => {
     window.parseDelay = 0;

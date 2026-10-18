@@ -1,8 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { startFixtureServer, launchExtensionContext, openFixturePage, openPopup, getServiceWorker } from './support/extensionHarness.js';
+import { startFixtureServer, launchExtensionContext, openFixturePage, openPopup, getServiceWorker, iocHighlights } from './support/extensionHarness.js';
 
 const send = (page, type, payload) => page.evaluate(({ type, payload }) => chrome.runtime.sendMessage({ type, payload }), { type, payload });
-const marks = (page) => page.locator('.mustela-highlight');
 const control = (page) => page.getByRole('button', { name: 'Mustela active on all pages', exact: true });
 async function expectAction(worker, paused) {
   await expect.poll(() => worker.evaluate(() => chrome.action.getBadgeText({}))).toBe(paused ? 'OFF' : 'ON');
@@ -15,7 +14,8 @@ async function openPanel(worker, page, payload = null) {
   }, { url: page.url(), payload });
 }
 async function expectClear(page) {
-  await expect(page.locator('.mustela-highlight, .mustela-page-indicator, .mustela-panel')).toHaveCount(0);
+  await expect.poll(() => iocHighlights(page).count()).toBe(0);
+  await expect(page.locator('.mustela-page-indicator, .mustela-panel')).toHaveCount(0);
 }
 
 async function expectTextButtonFits(button) {
@@ -93,7 +93,7 @@ test('persisted OFF remains effective after a browser and service-worker restart
     await openPanel(nextWorker, page, { type: 'ip', normalized: '203.0.113.50' });
     await expectClear(page);
     await control(reopened).click();
-    await expect(marks(page).first()).toBeVisible();
+    await expect.poll(() => iocHighlights(page).count()).toBeGreaterThan(0);
     await expectAction(nextWorker, false);
   } finally { await extension.close(); await server.close(); }
 });
@@ -126,7 +126,7 @@ for (const delayedStage of ['provider', 'llm']) {
 
       }, delayedStage);
       const page = await openFixturePage(extension.context, server.urlFor('/iocs.html'));
-      await expect(marks(page).first()).toBeVisible();
+      await expect.poll(() => iocHighlights(page).count()).toBeGreaterThan(0);
       await openPanel(worker, page, { type: 'ip', normalized: '8.8.8.8' });
       await expect.poll(() => worker.evaluate(() => typeof globalThis.releaseResponse)).toBe('function');
       await expect(page.locator('.mustela-panel')).toBeVisible();
@@ -134,7 +134,7 @@ for (const delayedStage of ['provider', 'llm']) {
       await expect(control(popup)).toHaveAttribute('aria-pressed', 'false');
       await expectClear(page);
       await control(popup).click();
-      await expect(marks(page).first()).toBeVisible();
+      await expect.poll(() => iocHighlights(page).count()).toBeGreaterThan(0);
       await worker.evaluate(() => releaseResponse());
       await page.waitForTimeout(300);
       await expect(page.locator('.mustela-panel')).toHaveCount(0);
@@ -149,9 +149,9 @@ test('confirmed popup OFF clears two keyless pages, closes panels, suspends muta
   try {
     const first = await openFixturePage(extension.context, server.urlFor('/iocs.html'));
     const second = await openFixturePage(extension.context, server.urlFor('/dynamic-iocs.html'));
-    await expect(marks(first).first()).toBeVisible();
+    await expect.poll(() => iocHighlights(first).count()).toBeGreaterThan(0);
     await second.locator('#appendDynamicIoc').click();
-    await expect(marks(second).first()).toBeVisible();
+    await expect.poll(() => iocHighlights(second).count()).toBeGreaterThan(0);
     const worker = await getServiceWorker(extension.context);
     await openPanel(worker, first);
     await expect(first.locator('.mustela-panel')).toBeVisible();
@@ -181,10 +181,10 @@ test('confirmed popup OFF clears two keyless pages, closes panels, suspends muta
     const reopened = await openPopup(extension.context, extension.extensionId);
     await expect(control(reopened)).toHaveAttribute('aria-pressed', 'false');
     await control(reopened).click();
-    await expect(marks(first).first()).toBeVisible();
+    await expect.poll(() => iocHighlights(first).count()).toBeGreaterThan(0);
     await second.locator('#appendDynamicIoc').click();
-    await expect(marks(second).first()).toBeVisible();
-    await expect(marks(fresh).first()).toBeVisible();
+    await expect.poll(() => iocHighlights(second).count()).toBeGreaterThan(0);
+    await expect.poll(() => iocHighlights(fresh).count()).toBeGreaterThan(0);
     await expectAction(worker, false);
     await expect(first.locator('.mustela-panel')).toHaveCount(0);
     await expect(second.locator('.mustela-panel')).toHaveCount(0);
@@ -197,7 +197,7 @@ test('resume preserves URL exclusions and disabled highlighting; failed popup wr
   try {
     const popup = await openPopup(extension.context, extension.extensionId);
     const first = await openFixturePage(extension.context, server.urlFor('/iocs.html'));
-    await expect(marks(first).first()).toBeVisible();
+    await expect.poll(() => iocHighlights(first).count()).toBeGreaterThan(0);
     await send(popup, 'SET_PAGE_DISABLED', { url: server.urlFor('/dynamic-iocs.html'), disabled: true });
     const excluded = await openFixturePage(extension.context, server.urlFor('/dynamic-iocs.html'));
     const settings = (await send(popup, 'GET_SETTINGS')).data;
@@ -220,7 +220,7 @@ test('resume preserves URL exclusions and disabled highlighting; failed popup wr
     await popup.keyboard.press('Tab');
     await expect(retry).toBeFocused();
     await expect(control(popup)).toHaveAttribute('aria-pressed', 'true');
-    await expect(marks(first).first()).toBeVisible();
+    await expect.poll(() => iocHighlights(first).count()).toBeGreaterThan(0);
     await worker.evaluate(() => { chrome.storage.local.set = originalStorageSet; });
     await expectAction(worker, false);
     await popup.getByRole('button', { name: 'Retry global change' }).click();
@@ -228,7 +228,7 @@ test('resume preserves URL exclusions and disabled highlighting; failed popup wr
     await expectRetryAbsent(popup);
     await expectTextButtonFits(control(popup));
     await control(popup).click();
-    await expect(marks(first).first()).toBeVisible();
+    await expect.poll(() => iocHighlights(first).count()).toBeGreaterThan(0);
     await expectClear(excluded);
     expect((await send(popup, 'GET_SETTINGS')).data).toEqual(settings);
     await send(popup, 'SAVE_SETTINGS', { highlightEnabled: false });

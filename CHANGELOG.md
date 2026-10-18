@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- Highlight IOC with the CSS Custom Highlight API instead of wrapping page text in elements. Sites that own their DOM (React, Vue, Angular…) no longer crash or show stale values after Mustela runs; pausing, disabling a page or turning highlighting off leaves the page DOM byte-for-byte as it was. Highlights no longer change page layout or add per-IOC blur and shadows; IOC text can now be selected without opening the panel. SVG text, code editors, `role="textbox"` and live regions are no longer scanned. No permission, dependency, or recipient changes.
+
 ## [0.4.0] - 2026-10-17
 
 ### Added

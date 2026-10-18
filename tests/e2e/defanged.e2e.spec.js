@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startFixtureServer, launchExtensionContext, openFixturePage, openPopup, bindPopupToTab, getServiceWorker } from './support/extensionHarness.js';
+import { startFixtureServer, launchExtensionContext, openFixturePage, openPopup, bindPopupToTab, getServiceWorker, iocHighlights } from './support/extensionHarness.js';
 
 test('defanged scan preserves text, stays local and shares canonical investigation/history values', async () => {
   const server = await startFixtureServer();
@@ -18,15 +18,16 @@ test('defanged scan preserves text, stays local and shares canonical investigati
     });
     const page = await openFixturePage(context, server.urlFor('/defanged-iocs.html'));
     const original = 'Before (hxxp://evil[.]com/a); HXXPS[:]//evil(.)com/a, evil[.]test and 8[.]8(.)8[.]8. Ordinary 1.1.1.1.';
-    await expect(page.locator('#report .mustela-highlight')).toHaveCount(5);
+    await expect.poll(() => iocHighlights(page, '#report').count()).toBe(5);
     await expect(page.locator('#report')).toHaveText(original);
-    await expect(page.locator('textarea .mustela-highlight, [contenteditable] .mustela-highlight, #report a')).toHaveCount(0);
+    expect(await iocHighlights(page, 'textarea, [contenteditable]').count()).toBe(0);
+    await expect(page.locator('#report a')).toHaveCount(0);
     await page.locator('#append').click();
-    await expect(page.locator('#dynamic .mustela-highlight')).toHaveCount(2);
+    await expect.poll(() => iocHighlights(page, '#dynamic').count()).toBe(2);
     expect(external).toEqual([]);
     expect(await worker.evaluate(() => scanRequests)).toEqual([]);
 
-    await page.locator('#report .mustela-highlight').first().click();
+    await iocHighlights(page, '#report').click();
     await expect(page.locator('.mustela-panel')).toContainText('http://evil.com/a');
     await expect(page).toHaveURL(server.urlFor('/defanged-iocs.html'));
     await expect(page.locator('#report')).toHaveText(original);
@@ -42,12 +43,12 @@ test('defanged scan preserves text, stays local and shares canonical investigati
 
     popup = await bindPopupToTab(context, await openPopup(context, extensionId), page);
     await popup.locator('#toggleBtn').click();
-    await expect(page.locator('.mustela-highlight')).toHaveCount(0);
+    await expect.poll(() => iocHighlights(page).count()).toBe(0);
     await expect(page.locator('#report')).toHaveText(original);
     await page.locator('#append').click();
-    await expect(page.locator('.mustela-highlight')).toHaveCount(0);
+    await expect.poll(() => iocHighlights(page).count()).toBe(0);
     await popup.locator('#toggleBtn').click();
-    await expect(page.locator('#report .mustela-highlight')).toHaveCount(5);
+    await expect.poll(() => iocHighlights(page, '#report').count()).toBe(5);
   } finally {
     await extension.close();
     await server.close();
