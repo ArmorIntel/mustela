@@ -47,25 +47,49 @@ export async function startFixtureServer() {
   };
 }
 
-export async function launchExtensionContext({ captureContextMenus = false } = {}) {
+export async function launchExtensionContext({ captureContextMenus = false, captureContentLifecycle = false } = {}) {
   const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mustela-extension-e2e-'));
   let instrumentedPath;
-  if (captureContextMenus) {
+  if (captureContextMenus || captureContentLifecycle) {
     // Observe the real registered handlers in a disposable extension copy.
     // Chrome does not expose native context-menu activation to Playwright.
     instrumentedPath = await fs.mkdtemp(path.join(os.tmpdir(), 'mustela-menu-e2e-'));
     await fs.cp(extensionPath, instrumentedPath, { recursive: true });
     const manifest = JSON.parse(await fs.readFile(path.join(instrumentedPath, 'manifest.json'), 'utf8'));
     const workerPath = path.join(instrumentedPath, manifest.background.service_worker);
-    const source = await fs.readFile(workerPath, 'utf8');
-    await fs.writeFile(workerPath, `
+    let source = await fs.readFile(workerPath, 'utf8');
+    if (captureContextMenus) source = `
 globalThis.contextMenuHandlers = [];
 const registerContextMenu = chrome.contextMenus.onClicked.addListener.bind(chrome.contextMenus.onClicked);
 chrome.contextMenus.onClicked.addListener = (listener) => {
   contextMenuHandlers.push(listener);
   registerContextMenu(listener);
 };
-${source}`);
+${source}`;
+    if (captureContentLifecycle) {
+      source = `
+globalThis.scriptCalls = [];
+const execute = chrome.scripting.executeScript.bind(chrome.scripting);
+chrome.scripting.executeScript = (options) => { scriptCalls.push(options); return execute(options); };
+${source}`;
+      const contentPath = path.join(instrumentedPath, 'src/content/content.js');
+      let content = await fs.readFile(contentPath, 'utf8');
+      content = content.replace('let disposed = false;', `
+function recordLifecycle(key) {
+  const data = JSON.parse(document.documentElement.dataset.testLifecycle || '{}');
+  const entry = data[instanceId] ||= { scans: 0, mutations: 0, observers: 0, disposed: 0 };
+  entry[key]++;
+  document.documentElement.dataset.testLifecycle = JSON.stringify(data);
+}
+let disposed = false;`)
+        .replace('disposed = true;', "recordLifecycle('disposed'); disposed = true;")
+        .replace('async function scanPage(reset = true) {', "async function scanPage(reset = true) { recordLifecycle('scans');")
+        .replace('observer = new MutationObserver(collectMutations);', `
+recordLifecycle('observers');
+observer = new MutationObserver((records) => { recordLifecycle('mutations'); collectMutations(records); });`);
+      await fs.writeFile(contentPath, content);
+    }
+    await fs.writeFile(workerPath, source);
   }
   const loadedExtensionPath = instrumentedPath || extensionPath;
   const launchOptions = {

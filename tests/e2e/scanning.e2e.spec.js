@@ -12,6 +12,7 @@ async function fixture(page) {
   await page.evaluate(() => {
     window.metrics = { scans: [], parsed: [], messages: [] };
     window.chrome = { runtime: {
+      id: 'fixture-extension',
       onMessage: { addListener(fn) { window.notify = fn; } },
       async sendMessage(message) {
         if (message.type === 'PAGE_IOCS_DETECTED') metrics.messages.push(message.payload);
@@ -36,6 +37,7 @@ async function fixture(page) {
     };
   });
   await page.addScriptTag({ content: content.replace('bootstrap();', `
+    window.scanState = () => ({ retained: detectedByNode.size, queued: pendingRoots.size });
     const originalScan = scanPage;
     scanPage = async (...args) => {
       const started = performance.now();
@@ -116,7 +118,7 @@ test('scan bounds text and traversal, yields to page tasks, and forgets removed 
     document.querySelector('main').append(fragment);
   });
   await expect.poll(() => page.evaluate(() => metrics.scans.length)).toBe(2);
-  const result = await page.evaluate(() => ({ count: metrics.parsed.length, longest: Math.max(...metrics.parsed.map((text) => text.length)), parsedAtYield, retained: detectedByNode.size, queued: pendingRoots.size }));
+  const result = await page.evaluate(() => ({ count: metrics.parsed.length, longest: Math.max(...metrics.parsed.map((text) => text.length)), parsedAtYield, ...scanState() }));
   expect(result.retained).toBeLessThanOrEqual(1500);
   expect(result.queued).toBeLessThanOrEqual(1500);
   expect(result.longest).toBeLessThanOrEqual(8192);

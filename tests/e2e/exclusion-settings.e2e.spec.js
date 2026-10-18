@@ -76,7 +76,7 @@ test('exact page and host exclusions clear stale results, block outputs with rul
     await expect(popup.locator('#iocList li')).toHaveCount(0);
     await page.evaluate(() => { const p = document.createElement('p'); p.textContent = '9.9.9.9'; document.body.append(p); });
     const reloaded = await openFixturePage(extension.context, page.url());
-    await expect.poll(() => reloaded.evaluate(() => document.documentElement.dataset.mustelaInjected)).toBe('true');
+    await expect.poll(() => reloaded.evaluate(() => document.documentElement.dataset.mustelaInjected)).toMatch(/^[0-9a-f]{32}$/);
     await expect.poll(() => iocHighlights(reloaded).count()).toBe(0);
     const blocked = await send(settings, 'OPEN_EXTERNAL_PROVIDER', { provider: 'virustotal', ioc: { type: 'ip', normalized: '8.8.8.8', sourceContext: { pageUrl: page.url() } } });
     expect(blocked.code).toBe('MUSTELA_EXCLUDED');

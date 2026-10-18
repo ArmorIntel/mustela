@@ -47,7 +47,7 @@ test('command without popup clears keyless pages and panel; popup, badge and res
     const reopened = await openPopup(extension.context, extension.extensionId);
     await expect(control(reopened)).toHaveText('Mustela OFF — resume');
     const fresh = await openFixturePage(extension.context, server.urlFor('/iocs.html'));
-    await expect.poll(() => fresh.locator('html').getAttribute('data-mustela-injected')).toBe('true');
+    await expect.poll(() => fresh.locator('html').getAttribute('data-mustela-injected')).toMatch(/^[0-9a-f]{32}$/);
     await expect.poll(() => iocHighlights(fresh).count()).toBe(0);
     await command(reopened);
     await expect(control(reopened)).toHaveText('Mustela ON — pause');
