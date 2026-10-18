@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Local exclusion rule API for exact page URLs, normalized exact IOC values and label-boundary host patterns, with validation and non-destructive legacy page pause migration. No configuration UI, permission or recipient changes.
 
 ### Security
+- Filter correlation history against current IOC and source-page exclusions before ranking and the ten-entry limit. Refuse excluded current pages and fewer than two eligible entries without an LLM request, including rules added after popup display. Preserve local history and existing protected IPv4 safeguards; no new permissions or recipients.
 - Enforce current local IOC and source-page exclusions before direct investigations (including cache/re-run), automatic summaries, provider pivots and MISP lookup/add, including stale interfaces and context menus. Provider-card actions now use guarded buttons instead of native external links. Removal never replays refused actions; correlation and local copy/export are unchanged. No new permissions or recipients.
 
 ### Fixed

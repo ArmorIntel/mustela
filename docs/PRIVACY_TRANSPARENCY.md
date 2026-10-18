@@ -112,8 +112,8 @@ Legacy disabled-page URLs are also effective exclusions for these actions.
   or replayed. Cache/history are not purged by a rule, and previously opened
   websites and remote data are not controlled by it.
 
-This guard is limited to direct investigations and pivots. It does not redact
-arbitrary page/provider text, filter correlation history/prompts, change
+Correlation also checks the current source page and filters history as described
+below. These guards do not redact arbitrary page/provider text, change
 configuration connection tests, or restrict local copy/export. Stored rules do
 not add detection filtering beyond existing page pauses. No new recipient,
 permission, telemetry, or cloud storage is introduced.
@@ -180,7 +180,13 @@ For eligible IOC, provider errors do not suppress the automatic summary: a confi
 
 ### Correlation selection
 
-The dedicated correlation action first excludes protected IPv4 entries, then selects up to **10 eligible history entries**, prioritized by threat verdict and then recency, with at least **2** eligible entries required. It sends IOC/type, verdict, score, tags, `seenCount`, and associated page URL/title when available, plus current-page URL/title if supplied. It does **not** send the entire history or free-form analyst notes.
+The dedicated correlation action reads current local exclusion rules at the time of the action, including rules added after the popup was displayed and legacy disabled-page URLs. A matching current source page refuses the entire correlation, even with enough allowed history. The check covers the supplied page context and the active tab's current URL.
+
+Before ranking or applying the **10-entry** limit, selection removes whole history entries whose IOC or either stored source page URL matches a current exclusion, as well as protected IPv4 entries. This applies to older investigations too. Remaining entries are prioritized by threat verdict and then recency. Fewer than **2 eligible entries** returns an explicit refusal without an LLM request. Unreadable exclusion rules fail closed; disabled or incomplete Analyst Assist configuration also makes no request.
+
+Only selected entries enter the prompt: excluded entries contribute no IOC, page URL/title or summary. The prompt sends selected IOC/type, verdict, score, tags, `seenCount`, and associated page URL/title when available, plus allowed current-page URL/title if supplied. It does **not** send the entire history or free-form analyst notes. This is entry filtering, not redaction of arbitrary text in allowed entries or current-page context.
+
+Filtering does not delete or rewrite local history. Removing a rule does not replay refused requests; a new analyst action is required. Exclusions do not recall already-started requests or delete data previously sent to an endpoint. No new recipient, Chrome permission or telemetry is added.
 
 ### Cache, failures, and recipient policies
 
