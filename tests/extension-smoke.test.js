@@ -39,14 +39,16 @@ test('content script still exposes critical runtime hooks', () => {
   assert.doesNotMatch(content, /replaceChild|mustela-fragment/);
 });
 
-test('content panel keeps links intact and adds copyable non-link values', () => {
+test('content panel uses guarded provider buttons and copyable non-link values', () => {
   const content = fs.readFileSync(contentPath, 'utf8');
   assert.match(content, /mustela-copyable/);
   assert.match(content, /bindCopyables\(root = panelEl\)/);
   assert.match(content, /querySelectorAll\('\.mustela-copyable'\)/);
   assert.match(content, /role="button" tabindex="0"/);
   assert.match(content, /event.key === 'Enter' \|\| event.key === ' '/);
-  assert.match(content, /provider.externalUrl \? `<div class="mustela-provider-actions"><a class="mustela-provider-link" target="_blank" rel="noopener noreferrer"/);
+  assert.match(content, /provider.externalUrl \? `<div class="mustela-provider-actions"><button type="button" class="mustela-provider-link"/);
+  assert.match(content, /openExternal\(button.dataset.provider, data.ioc\)/);
+  assert.doesNotMatch(content, /href="\$\{escapeHtml\(provider.externalUrl\)\}"|window.open\(/);
 });
 
 test('popup html contains the analyst-facing sections and no raw broken tag text', () => {

@@ -81,6 +81,43 @@ Confirmed OFF is propagated to loaded pages: highlights and detection indicators
 
 Pause does **not** cancel or recall requests already started, promise remote deletion, purge local data, or stop autonomous traffic from a website already opened. Local history, cache, keys, URL exclusions and highlighting preferences are retained, not erased or overwritten. No recipient, Chrome permission, telemetry, or cloud storage is added. The operations below describe ON behavior, subject to this pause and the protected IPv4 policy.
 
+### Direct-action exclusions
+
+Local exact page-URL, normalized exact-IOC and host rules are described in
+[Local exclusion rule API](EXCLUSION_RULES.md). There is no new rule editor yet.
+Legacy disabled-page URLs are also effective exclusions for these actions.
+
+- The background checks both the IOC and all available source page URLs:
+  `sourceContext.pageUrl`, the Chrome sender's tab/frame URLs, the current URL
+  of that tab, and the active tab for popup actions. Any match refuses the action,
+  even if another source is allowed. Popup pivots retain their source page.
+- Direct investigations from highlights, manual input, history and context menus,
+  including cached results and Re-run, cannot bypass a matching rule. No enabled
+  provider lookup or automatic Analyst Assist summary starts for an excluded
+  action, regardless of valid keys or a pre-existing cached result.
+- Every provider-card action is a background-checked button, not an unguarded
+  native link. Manual pivots, runtime pivot messages and context-menu pivots also
+  check current rules before opening a provider tab, including without API keys.
+- MISP lookup, website pivots and explicit Add to MISP have no exclusion exception,
+  even for a private/internal instance or a protected IPv4. Exclusion rules take
+  precedence over the MISP exception in the protected IPv4 policy below.
+- Rules are re-read before each new provider/summary call and navigation, not only
+  when rendering UI. A rule added while a request is outstanding prevents later
+  calls once observed. Already-started requests cannot be recalled or cancelled.
+  Refusals return `ok: false`, `code: 'MUSTELA_EXCLUDED'`, and an IOC/page explanation;
+  menus notify the originating tab. Unreadable rules or unavailable tab context
+  fail closed rather than authorizing a transmission.
+- Repeated clicks do not override a rule. After explicit removal, only new actions
+  can proceed under the other existing protections; nothing is automatically sent
+  or replayed. Cache/history are not purged by a rule, and previously opened
+  websites and remote data are not controlled by it.
+
+This guard is limited to direct investigations and pivots. It does not redact
+arbitrary page/provider text, filter correlation history/prompts, change
+configuration connection tests, or restrict local copy/export. Stored rules do
+not add detection filtering beyond existing page pauses. No new recipient,
+permission, telemetry, or cloud storage is introduced.
+
 ### Protected IPv4 policy
 
 The following literal IPv4 ranges are protected: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, `192.0.2.0/24`, `198.51.100.0/24`, and `203.0.113.0/24`.

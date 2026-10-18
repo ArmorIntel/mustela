@@ -139,7 +139,13 @@ async function sendRuntimeMessage(message, fallback = null) {
 }
 
 async function openExternal(provider, ioc) {
-  await sendRuntimeMessage({ type: 'OPEN_EXTERNAL_PROVIDER', payload: { provider, ioc } });
+  const response = await sendRuntimeMessage({ type: 'OPEN_EXTERNAL_PROVIDER', payload: {
+    provider, ioc: { ...ioc, sourceContext: ioc?.sourceContext || { pageUrl: location.href, pageTitle: document.title || '' } }
+  } });
+  if (!response?.ok) {
+    const status = panelEl?.querySelector('#mustela-note-status, #mustela-manual-hint');
+    if (status) status.textContent = response?.error || 'External lookup unavailable.';
+  }
 }
 
 function isExternalPivotSupported(providerId, ioc) {
@@ -556,23 +562,21 @@ function renderEmptyState() {
   result.querySelector('#mustela-open-vt').addEventListener('click', () => {
     const ioc = updateHint();
     if (ioc) return openExternal('virustotal', ioc);
-    window.open('https://www.virustotal.com/gui/home/search', '_blank');
   });
   result.querySelector('#mustela-open-abuse').addEventListener('click', () => {
     const ioc = updateHint();
     if (isExternalPivotSupported('abuseipdb', ioc)) return openExternal('abuseipdb', ioc);
-    window.open('https://www.abuseipdb.com/', '_blank');
   });
   result.querySelector('#mustela-open-shodan').addEventListener('click', () => {
     const ioc = updateHint();
     if (isExternalPivotSupported('shodan', ioc)) return openExternal('shodan', ioc);
-    window.open('https://www.shodan.io/', '_blank');
   });
   syncManualPivotButtons(result, null);
 }
 
 function humanizeError(message) {
   const text = String(message || 'Unknown error');
+  if (/excluded|Unable to verify local exclusion rules/i.test(text)) return text;
   if (/quota/i.test(text)) return 'Local storage is full. The result can still be shown, but the extension cache needs to be trimmed.';
   if (/network/i.test(text) || /fetch/i.test(text)) return 'Network request failed. Check connectivity or provider availability.';
   return 'Something went wrong during the lookup. Try again in a moment.';
@@ -667,7 +671,7 @@ function renderProviderCard(provider) {
       ${shouldShowSummary ? `<div class="mustela-provider-summary">${escapeHtml(summary)}</div>` : ''}
       ${fields}
       ${provider.error ? `<small style="display:block;margin-top:10px;">${escapeHtml(provider.error)}</small>` : ''}
-      ${provider.externalUrl ? `<div class="mustela-provider-actions"><a class="mustela-provider-link" target="_blank" rel="noopener noreferrer" href="${escapeHtml(provider.externalUrl)}">Open in ${escapeHtml(provider.provider)}</a></div>` : ''}
+      ${provider.externalUrl ? `<div class="mustela-provider-actions"><button type="button" class="mustela-provider-link" data-provider="${escapeHtml(String(provider.provider || '').toLowerCase())}">Open in ${escapeHtml(provider.provider)}</button></div>` : ''}
     </div>
   `;
 }
@@ -906,6 +910,9 @@ function renderResult(data) {
     </div>
   `;
   bindCopyables(panelEl);
+  panelEl.querySelectorAll('.mustela-provider-link').forEach((button) => {
+    button.addEventListener('click', () => openExternal(button.dataset.provider, data.ioc));
+  });
   panelEl.querySelector('#mustela-rerun').addEventListener('click', () => openPanel(data.ioc, false));
   bindAnalystActions(data);
 }
@@ -961,6 +968,15 @@ function escapeHtml(value) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'MUSTELA_ACTION_BLOCKED' && ['MUSTELA_EXCLUDED', 'MUSTELA_EXCLUSION_UNAVAILABLE'].includes(message.code)) {
+    syncPauseState().then(() => {
+      if (!initialized || globallyPaused) return;
+      ++panelGeneration;
+      renderPanelSkeleton({});
+      renderError(message.error);
+    });
+    return;
+  }
   if (message?.type === 'PAUSE_STATE_UPDATED') {
     // Invalidate work immediately, even while an authoritative read is pending.
     if (message.payload?.paused) applyPauseState(true);
