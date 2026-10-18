@@ -63,14 +63,13 @@ function urlHost(value) {
   }
 }
 
-// Pure decision helper for future guards. No traffic, settings, UI or outputs
-// are wired here. Accept normalized rules from validation/the storage reader.
-export function isExcluded(rules, { pageUrl, ioc } = {}) {
+// Pure shared decision helper. Accept normalized rules from validation/storage.
+export function findExclusion(rules, { pageUrl, ioc } = {}) {
   const iocValue = ioc ? normalizeIoc(ioc.normalized ?? ioc.raw, ioc.type) : '';
   const hosts = [urlHost(pageUrl)];
   if (ioc?.type === IOC_TYPES.DOMAIN) hosts.push(iocValue);
   if (ioc?.type === IOC_TYPES.URL) hosts.push(urlHost(iocValue));
-  return rules.some((rule) => {
+  return rules.find((rule) => {
     if (rule.kind === 'page-url') return typeof pageUrl === 'string' && pageUrl === rule.value;
     if (rule.kind === 'ioc') return ioc?.type === rule.iocType && iocValue === rule.value;
     if (rule.kind === 'host') {
@@ -80,4 +79,12 @@ export function isExcluded(rules, { pageUrl, ioc } = {}) {
     }
     return false;
   });
+}
+
+export function isExcluded(rules, context) {
+  return !!findExclusion(rules, context);
+}
+
+export function exclusionReason(rule) {
+  return `Excluded by ${rule.kind}${rule.iocType ? ` (${rule.iocType})` : ''} rule: ${rule.value}. Remove this rule explicitly in settings before retrying. Previously shared data is not withdrawn from recipients.`;
 }

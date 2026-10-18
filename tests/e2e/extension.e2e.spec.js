@@ -65,7 +65,10 @@ test.describe('Chrome extension E2E', () => {
       await page.reload();
       await expect.poll(() => iocHighlights(page).count()).toBe(0);
       await expect(page.locator('#report')).toHaveText(original);
-      await popup.locator('#toggleBtn').click();
+      await expect(popup.locator('#toggleBtn')).toBeDisabled();
+      const settings = await context.newPage();
+      await settings.goto(`chrome-extension://${extensionId}/src/welcome/welcome.html`);
+      await settings.getByRole('button', { name: 'Remove page pause', exact: true }).click();
       await expect.poll(() => iocHighlights(page, '#report').count()).toBe(5);
     } finally {
       await extension.close();
@@ -117,7 +120,7 @@ test.describe('Chrome extension E2E', () => {
     }
   });
 
-  test('can disable and re-enable the extension on the active page from the popup', async () => {
+  test('can disable a page from the popup and explicitly remove its pause in settings', async () => {
     const extension = await launchExtensionContext();
     const { context, extensionId } = extension;
 
@@ -134,7 +137,10 @@ test.describe('Chrome extension E2E', () => {
       await expect(popup.locator('#summaryBadge')).toHaveText('Paused');
       await expect(popup.locator('#summaryText')).toContainText('disabled on this page');
 
-      await popup.locator('#toggleBtn').click();
+      await expect(popup.locator('#toggleBtn')).toBeDisabled();
+      const settings = await context.newPage();
+      await settings.goto(`chrome-extension://${extensionId}/src/welcome/welcome.html`);
+      await settings.getByRole('button', { name: 'Remove page pause', exact: true }).click();
       await expect.poll(() => iocHighlights(page).count()).toBe(4);
       await expect(popup.locator('#summaryBadge')).toContainText('4 IOC');
 

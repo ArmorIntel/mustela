@@ -23,7 +23,7 @@ globalThis.chrome = {
 };
 await import('../src/background/background.js');
 const send = (type, sender, payload) => new Promise((resolve) => listener({ type, payload }, sender, resolve));
-const contentTypes = new Set(['GET_CONTENT_SETTINGS', 'PAGE_IOCS_DETECTED', 'GET_PAUSE_STATE', 'LOOKUP_IOC', 'OPEN_EXTERNAL_PROVIDER', 'GET_HISTORY_ENTRY', 'SAVE_HISTORY_NOTE', 'SAVE_HISTORY_TLP', 'IS_PAGE_DISABLED', 'ADD_IOC_TO_MISP']);
+const contentTypes = new Set(['GET_CONTENT_SETTINGS', 'PAGE_IOCS_DETECTED', 'GET_PAUSE_STATE', 'LOOKUP_IOC', 'OPEN_EXTERNAL_PROVIDER', 'GET_HISTORY_ENTRY', 'SAVE_HISTORY_NOTE', 'SAVE_HISTORY_TLP', 'IS_PAGE_DISABLED', 'GET_DETECTION_POLICY', 'ADD_IOC_TO_MISP']);
 const types = [...(await readFile(new URL('../src/background/background.js', import.meta.url), 'utf8')).matchAll(/case '([A-Z_]+)'/g)].map((match) => match[1]);
 
 test('every message type enforces its sender boundary before dispatch', async () => {

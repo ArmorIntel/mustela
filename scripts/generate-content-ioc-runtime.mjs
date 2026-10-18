@@ -7,5 +7,6 @@ const sourcePath = path.join(root, 'src', 'shared', 'ioc.js');
 const targetPath = path.join(root, 'src', 'shared', 'ioc.content-runtime.js');
 
 const source = await readFile(sourcePath, 'utf8');
-await writeFile(targetPath, generateContentIocRuntime(source));
+const exclusions = await readFile(path.join(root, 'src', 'shared', 'exclusions.js'), 'utf8');
+await writeFile(targetPath, generateContentIocRuntime(source, exclusions));
 console.log(`Generated ${path.relative(root, targetPath)} from ${path.relative(root, sourcePath)}`);

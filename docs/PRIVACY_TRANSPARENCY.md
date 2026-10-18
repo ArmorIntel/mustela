@@ -60,7 +60,7 @@ This storage remembers configuration and investigations and reduces repeated cal
 
 ## Message security boundary
 
-API keys are never transmitted to visited pages or their content scripts through extension messages. Content scripts request only `highlightEnabled` and `detectionMode`; settings-change broadcasts to tabs contain exactly those two fields, not provider credentials or API configuration URLs.
+API keys are never transmitted to visited pages or their content scripts through extension messages. Display settings contain only `highlightEnabled` and `detectionMode`; settings-change broadcasts to tabs contain exactly those two fields, not provider credentials or API configuration URLs. A separate detection-policy read supplies local exclusion rules and the page's matching decision to the isolated extension content script for local filtering; it does not insert the rule list into the site's DOM or send it to a provider. Rule management remains reserved to extension pages.
 
 The background checks the Chrome-supplied sender ID and URL before processing messages. This extension's own pages (including the welcome/settings page in an extension tab) can manage settings, bulk history, cache, configuration tests, and correlation. HTTP(S) content scripts are limited to reporting detections, reading pause/display/page-disabled state, looking up IOC and opening pivots, and the panel's single-entry history, note, TLP, and explicit MISP actions. Other senders and unauthorized messages receive an explicit failure before storage, network, or navigation work. A content script cannot save settings, change global pause, or clear history through this message interface. These checks do not remove the panel's documented investigation disclosures or protect against a compromised extension page/browser profile.
 
@@ -84,7 +84,7 @@ Pause does **not** cancel or recall requests already started, promise remote del
 ### Direct-action exclusions
 
 Local exact page-URL, normalized exact-IOC and host rules are described in
-[Local exclusion rule API](EXCLUSION_RULES.md). There is no new rule editor yet.
+[Local exclusion rules](EXCLUSION_RULES.md). Manage them without API keys in Settings → Local exclusions; invalid input leaves saved rules unchanged. Saves update loaded pages and open popups, without a browser restart or automatic investigation.
 Legacy disabled-page URLs are also effective exclusions for these actions.
 
 - The background checks both the IOC and all available source page URLs:
@@ -104,7 +104,7 @@ Legacy disabled-page URLs are also effective exclusions for these actions.
 - Rules are re-read before each new provider/summary call and navigation, not only
   when rendering UI. A rule added while a request is outstanding prevents later
   calls once observed. Already-started requests cannot be recalled or cancelled.
-  Refusals return `ok: false`, `code: 'MUSTELA_EXCLUDED'`, and an IOC/page explanation;
+  Refusals return `ok: false`, `code: 'MUSTELA_EXCLUDED'`, and an IOC/page explanation identifying the matching rule and its explicit removal in settings;
   menus notify the originating tab. Unreadable rules or unavailable tab context
   fail closed rather than authorizing a transmission.
 - Repeated clicks do not override a rule. After explicit removal, only new actions
@@ -114,8 +114,7 @@ Legacy disabled-page URLs are also effective exclusions for these actions.
 
 Correlation also checks the current source page and filters history as described
 below. These guards do not redact arbitrary page/provider text, change
-configuration connection tests, or restrict local copy/export. Stored rules do
-not add detection filtering beyond existing page pauses. No new recipient,
+configuration connection tests, or restrict local copy/export. Excluded pages do not scan/highlight; allowed pages omit matching IOC values, including dynamic DOM additions. Saving rules invalidates scans, highlights, stale page detection results and open investigation panels. Removing a rule resumes permitted detection only, not investigations. The popup cannot override exclusions or legacy page pauses; remove them explicitly in settings. No new recipient,
 permission, telemetry, or cloud storage is introduced.
 
 ### Protected IPv4 policy

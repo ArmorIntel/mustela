@@ -47,7 +47,10 @@ test('defanged scan preserves text, stays local and shares canonical investigati
     await expect(page.locator('#report')).toHaveText(original);
     await page.locator('#append').click();
     await expect.poll(() => iocHighlights(page).count()).toBe(0);
-    await popup.locator('#toggleBtn').click();
+    await expect(popup.locator('#toggleBtn')).toBeDisabled();
+    const settings = await context.newPage();
+    await settings.goto(`chrome-extension://${extensionId}/src/welcome/welcome.html`);
+    await settings.getByRole('button', { name: 'Remove page pause', exact: true }).click();
     await expect.poll(() => iocHighlights(page, '#report').count()).toBe(5);
   } finally {
     await extension.close();

@@ -17,6 +17,10 @@
       --accent: #7dd3fc;
     }
     * { box-sizing: border-box; }
+    .exclusion-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .exclusion-row input { flex: 1 1 220px; min-width: 0; }
+    .exclusion-row select { width: auto; }
+    #legacyExclusions { overflow-wrap: anywhere; }
     body {
       margin:0;
       color:var(--text);
@@ -211,6 +215,19 @@
           </div>
         </div>
       </div>
+
+      <section class="card" aria-labelledby="exclusionsTitle">
+        <h2 id="exclusionsTitle">Local exclusions</h2>
+        <p>No API key required. Exact page URLs include path, query and fragment. A host matches only itself; *.host matches subdomains, not the bare host. Host rules also omit matching domain and URL IOC. Exact IOC rules use type-specific normalization. No regex.</p>
+        <p>Excluded pages are not detected or highlighted. Excluded values are omitted elsewhere. Direct investigations, external pivots and history correlation respect these rules. Remove a rule here explicitly before retrying; there is no one-time override. Changes do not start investigations or withdraw data already shared with recipients.</p>
+        <div id="exclusionRules"></div>
+        <div class="provider-actions">
+          <button type="button" id="addExclusion">Add exclusion</button>
+          <button type="button" id="saveExclusions" disabled>Save exclusions</button>
+        </div>
+        <p id="exclusionStatus" role="status" aria-live="polite">Loading local exclusions…</p>
+        <div id="legacyExclusions"></div>
+      </section>
 
       <section class="card provider-card">
         <div class="provider-title">

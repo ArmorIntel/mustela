@@ -404,6 +404,13 @@ export function getExclusionRules() {
 
 // Replaces configured rules only. Legacy page pauses remain independently
 // managed by setPageDisabled/clearDisabledPages, and are included on every read.
+export function getConfiguredExclusionRules() {
+  return withExclusionRules(async () => {
+    const data = await getStorageArea().get(EXCLUSIONS_KEY);
+    return readExclusionRecord(data[EXCLUSIONS_KEY]);
+  });
+}
+
 export function saveExclusionRules(rules) {
   return withExclusionRules(async () => {
     const normalized = normalizeExclusionRules(rules);
