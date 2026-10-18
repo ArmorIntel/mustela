@@ -558,21 +558,19 @@ async function lookupIoc(ioc, sender = {}, run) {
     return cachedInvestigation;
   }
 
-  const results = [];
-  for (const [providerId, provider] of Object.entries(PROVIDERS)) {
+  const settled = await Promise.allSettled(Object.entries(PROVIDERS).map(async ([providerId, provider]) => {
     await run();
     if (protectedIpv4 && provider.external !== false) {
-      results.push({ provider: provider.name, success: false, blocked: true, summary: PUBLIC_LOOKUP_BLOCK_REASON });
-      continue;
+      return { provider: provider.name, success: false, blocked: true, summary: PUBLIC_LOOKUP_BLOCK_REASON };
     }
     const providerSettings = settings.providers?.[providerId];
-    if (!providerSettings?.enabled) continue;
-    if (!provider.supportedTypes.includes(ioc.type)) continue;
+    if (!providerSettings?.enabled) return;
+    if (!provider.supportedTypes.includes(ioc.type)) return;
     const configured = typeof provider.isConfigured === 'function'
       ? provider.isConfigured(providerSettings)
       : !!providerSettings?.apiKey;
     if (!configured) {
-      results.push({
+      return {
         provider: provider.name,
         success: false,
         summary: providerId === 'misp'
@@ -580,18 +578,21 @@ async function lookupIoc(ioc, sender = {}, run) {
           : 'API key not configured — external lookup available',
         error: providerId === 'misp' ? 'MISP not configured' : 'API key not configured',
         externalUrl: provider.buildExternalUrl ? provider.buildExternalUrl(ioc) : undefined
-      });
-      continue;
+      };
     }
     try {
       const result = await run(() => provider.lookup(ioc, providerSettings));
-      results.push({ timestamp: new Date().toISOString(), ...result });
+      return { timestamp: new Date().toISOString(), ...result };
     } catch (error) {
       if (String(error.code || '').startsWith('MUSTELA_')) throw error;
       const humanMessage = humanizeProviderError(error, provider.name);
-      results.push({ provider: provider.name, success: false, summary: humanMessage, error: humanMessage, timestamp: new Date().toISOString(), externalUrl: provider.buildExternalUrl ? provider.buildExternalUrl(ioc) : undefined });
+      return { provider: provider.name, success: false, summary: humanMessage, error: humanMessage, timestamp: new Date().toISOString(), externalUrl: provider.buildExternalUrl ? provider.buildExternalUrl(ioc) : undefined };
     }
-  }
+  }));
+  // Policy refusals invalidate the whole action, never become provider errors.
+  const rejected = settled.find((result) => result.status === 'rejected');
+  if (rejected) throw rejected.reason;
+  const results = settled.map((result) => result.value).filter(Boolean);
 
   const orderedResults = sortProviderResults(results);
   const summary = summarizeProviderVerdict(orderedResults);

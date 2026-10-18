@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_SETTINGS, getSettings, saveSettings } from '../src/storage/storage.js';
+import { PROVIDERS } from '../src/providers/providers.js';
+import { setTimeout as delay } from 'node:timers/promises';
 
 let store = {};
 let listener;
@@ -114,6 +116,75 @@ test('OFF rejects all transmission entries before validation, configuration, fet
   assert.deepEqual(calls, []);
 });
 
+test('eligible providers settle in parallel, preserve sorting and isolate failures before Analyst Assist', async (t) => {
+  for (const latencies of [[300, 300, 300], [300, 100, 200]]) {
+    await setup();
+    store.mustela_settings.providers.misp.enabled = false;
+    const finished = [];
+    for (const [index, provider] of Object.values(PROVIDERS).slice(0, 3).entries()) {
+      t.mock.method(provider, 'lookup', async () => {
+        await delay(latencies[index]);
+        finished.push(provider.name);
+        if (index === 1 && latencies[1] === 100) throw new Error('HTTP 429');
+        return { provider: provider.name, success: true, verdict: 'unknown', confidence: 0 };
+      });
+    }
+    t.mock.method(globalThis, 'fetch', async (url) => {
+      assert.ok(url.startsWith('https://llm.example/'));
+      assert.equal(finished.length, 3, 'Analyst Assist waits for every provider');
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"summary":"complete brief"}' } }] }));
+    });
+    const started = performance.now();
+    const response = await send('LOOKUP_IOC', ip);
+    const elapsed = performance.now() - started;
+    assert.equal(response.ok, true);
+    assert.ok(elapsed < 500, `parallel lookup took ${elapsed.toFixed(0)} ms`);
+    assert.deepEqual(response.data.providerResults.map((result) => result.provider),
+      latencies[1] === 300 ? ['AbuseIPDB', 'VirusTotal', 'Shodan'] : ['VirusTotal', 'Shodan', 'AbuseIPDB']);
+    if (latencies[1] === 100) {
+      const failure = response.data.providerResults[2];
+      assert.equal(failure.success, false);
+      assert.match(failure.error, /rate limit|quota|429/i);
+      assert.equal(failure.summary, failure.error);
+    }
+    assert.equal(response.data.llmSummary.summary, 'complete brief');
+    t.mock.restoreAll();
+  }
+});
+
+test('pause during a lookup blocks a provider still awaiting its transmission guard', async (t) => {
+  await setup();
+  const started = deferred();
+  const release = deferred();
+  const calls = [];
+  t.mock.method(PROVIDERS.virustotal, 'lookup', async () => {
+    calls.push('VirusTotal');
+    started.resolve();
+    await release.promise;
+    return { provider: 'VirusTotal', success: true };
+  });
+  // Hold subsequent guards in an asynchronous local policy check, not in a
+  // provider: these transmissions have not started when OFF is confirmed.
+  t.mock.method(PROVIDERS.misp, 'isConfigured', () => {
+    t.mock.method(chrome.tabs, 'query', async (options) => {
+      if (options.active) await release.promise;
+      return [];
+    });
+    return true;
+  });
+  for (const provider of Object.values(PROVIDERS).slice(1)) {
+    t.mock.method(provider, 'lookup', async () => { calls.push(provider.name); return { provider: provider.name, success: true }; });
+  }
+  const lookup = send('LOOKUP_IOC', ip);
+  await started.promise;
+  assert.equal((await pause(true)).ok, true);
+  release.resolve();
+  blocked(await lookup);
+  assert.deepEqual(calls, ['VirusTotal', 'AbuseIPDB']);
+  assert.equal(store.mustela_history, undefined);
+  assert.equal(store.mustela_cache, undefined);
+});
+
 test('confirmed pause invalidates an in-flight chain across resume, success and timeout', async (t) => {
   for (const failure of [false, true]) {
     await setup();
@@ -130,10 +201,12 @@ test('confirmed pause invalidates an in-flight chain across resume, success and 
     const lookup = send('LOOKUP_IOC', ip);
     await started.promise;
     assert.equal((await pause(true)).ok, true);
+    const transmittedBeforePause = calls.length;
+    assert.ok(transmittedBeforePause >= 1 && transmittedBeforePause <= 4);
     assert.equal((await pause(false)).ok, true);
     release.resolve();
     blocked(await lookup);
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, transmittedBeforePause, 'no new transmission after pause or resume');
     assert.equal(store.mustela_history, undefined);
     assert.equal(store.mustela_cache, undefined);
     t.mock.restoreAll();
