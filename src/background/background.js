@@ -4,9 +4,13 @@ import { addIocToMisp, isProviderSupportedForIoc, PROVIDERS } from '../providers
 import { addHistory, clearCache, clearDetectedForTab, clearDisabledPages, clearHistory, getCachedResult, getDetectedForTab, getHistory, getHistoryEntry, getSettings, isPageDisabled, removeLegacyDetected, saveDetectedForTab, saveHistoryNote, saveHistoryTlp, saveSettings, setCachedResult, setPageDisabled, toggleHistoryPin } from '../storage/storage.js';
 
 import { createTransmissionGate, pauseFailure } from './pause.js';
+import { createProviderScheduler } from './provider-scheduling.js';
 import { createDirectActionGuard } from './direct-actions.js';
 import { isExcluded, findExclusion, exclusionReason } from '../shared/exclusions.js';
 import { getExclusionRules, getConfiguredExclusionRules, getDisabledPages, saveExclusionRules } from '../storage/storage.js';
+
+const providerScheduler = createProviderScheduler();
+const pendingLookups = new Map();
 
 async function detectionPolicy(pageUrl) {
   const rules = await getExclusionRules();
@@ -66,6 +70,10 @@ function changePause(paused, toggle = false) {
     try {
       const target = toggle ? !(await transmissions.getState()).paused : paused;
       const state = await transmissions.setState(target);
+      if (state.paused) {
+        providerScheduler.clearPending();
+        pendingLookups.clear();
+      }
       transitionError = '';
       await updateAction(state);
       await notifyPause(state);
@@ -407,6 +415,7 @@ function humanizeProviderError(error, providerName) {
     return `${provider} denied access to this lookup.`;
   }
   if (status === 404) return `${provider} has no result for this IOC.`;
+  if (status === 429 && Number.isFinite(error.retryAfterSeconds)) return `${provider}: quota reached, retry possible in ${error.retryAfterSeconds} s.`;
   if (status === 429) return `${provider} rate limit reached. Try again later.`;
   if (status >= 500) return `${provider} is temporarily unavailable.`;
   return error?.message || 'Lookup failed';
@@ -546,6 +555,35 @@ async function lookupIoc(ioc, sender = {}, run) {
   const settings = await getSettings();
   const providerFingerprint = btoa(buildProviderCacheProfile(settings));
   const cacheKey = `${ioc.type}:${ioc.normalized}:${providerFingerprint}`;
+  // Register only inside the final synchronous pause check: a settings read
+  // spanning OFF/ON must not install an obsolete shared promise after resume.
+  return run(() => shareLookup(ioc, sender, run, settings, cacheKey, protectedIpv4));
+}
+
+async function shareLookup(ioc, sender, run, settings, cacheKey, protectedIpv4) {
+  const previous = pendingLookups.get(cacheKey);
+  if (previous && !ioc._rerun) {
+    const result = await previous;
+    await run();
+    const investigation = { ...result, ioc };
+    await rememberInvestigation(ioc, investigation, sender);
+    return investigation;
+  }
+  const task = (async () => {
+    // Explicit re-runs serialize behind the current lookup, even on failure.
+    if (previous) await previous.catch(() => undefined);
+    await run();
+    return performLookup(ioc, sender, run, settings, cacheKey, protectedIpv4);
+  })();
+  pendingLookups.set(cacheKey, task);
+  try {
+    return await task;
+  } finally {
+    if (pendingLookups.get(cacheKey) === task) pendingLookups.delete(cacheKey);
+  }
+}
+
+async function performLookup(ioc, sender, run, settings, cacheKey, protectedIpv4) {
   // Never reuse legacy public results, links or AI briefs for protected IPv4.
   const cached = protectedIpv4 || ioc?._rerun ? null : await getCachedResult(cacheKey, settings.cacheTtlMinutes || 30);
   if (cached) {
@@ -584,12 +622,12 @@ async function lookupIoc(ioc, sender = {}, run) {
       };
     }
     try {
-      const result = await run(() => provider.lookup(ioc, providerSettings));
+      const result = await providerScheduler.run(providerId, providerSettings, run, () => provider.lookup(ioc, providerSettings));
       return { timestamp: new Date().toISOString(), ...result };
     } catch (error) {
       if (String(error.code || '').startsWith('MUSTELA_')) throw error;
       const humanMessage = humanizeProviderError(error, provider.name);
-      return { provider: provider.name, success: false, summary: humanMessage, error: humanMessage, timestamp: new Date().toISOString(), externalUrl: provider.buildExternalUrl ? provider.buildExternalUrl(ioc) : undefined };
+      return { provider: provider.name, success: false, summary: humanMessage, error: humanMessage, retryAt: error.retryAt, timestamp: new Date().toISOString(), externalUrl: provider.buildExternalUrl ? provider.buildExternalUrl(ioc) : undefined };
     }
   }));
   // Policy refusals invalidate the whole action, never become provider errors.
@@ -620,7 +658,9 @@ async function lookupIoc(ioc, sender = {}, run) {
   };
   const enrichedInvestigation = await maybeAttachLlmSummary(settings, investigation, run);
   await run();
-  const cacheWrite = await setCachedResult(cacheKey, enrichedInvestigation);
+  // A cached quota refusal would hide the changing deadline and outlive it.
+  const cacheWrite = results.some((result) => result.retryAt !== undefined)
+    ? null : await setCachedResult(cacheKey, enrichedInvestigation);
   await rememberInvestigation(ioc, enrichedInvestigation, sender);
   if (cacheWrite && cacheWrite.quota) {
     enrichedInvestigation.storageWarning = 'Cache storage limit reached. Results are shown, but long-term cache was reduced.';

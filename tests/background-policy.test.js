@@ -93,6 +93,7 @@ function configure({ keys = true, enabled = true, misp = false } = {}) {
   store = { mustela_settings: {
     ...structuredClone(DEFAULT_SETTINGS),
     providers: Object.fromEntries(Object.keys(DEFAULT_SETTINGS.providers).map((id) => [id, {
+      minIntervalMs: 0, // Policy coverage uses immediate sends; scheduling has clock-controlled tests.
       enabled: id === 'misp' ? misp : enabled, apiKey: keys ? 'test-key' : '', baseUrl: id === 'misp' ? 'https://misp.example' : '', defaultEventId: '42'
     }])),
     analystAssist: { enabled: true, baseUrl: 'http://localhost:1234/v1', apiKey: 'test-key', model: 'test-model' }

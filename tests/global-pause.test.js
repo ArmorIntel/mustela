@@ -159,19 +159,16 @@ test('pause during a lookup blocks a provider still awaiting its transmission gu
   const calls = [];
   t.mock.method(PROVIDERS.virustotal, 'lookup', async () => {
     calls.push('VirusTotal');
+    t.mock.method(chrome.tabs, 'query', async (options) => {
+      if (options.active) await release.promise;
+      return [];
+    });
     started.resolve();
     await release.promise;
     return { provider: 'VirusTotal', success: true };
   });
   // Hold subsequent guards in an asynchronous local policy check, not in a
   // provider: these transmissions have not started when OFF is confirmed.
-  t.mock.method(PROVIDERS.misp, 'isConfigured', () => {
-    t.mock.method(chrome.tabs, 'query', async (options) => {
-      if (options.active) await release.promise;
-      return [];
-    });
-    return true;
-  });
   for (const provider of Object.values(PROVIDERS).slice(1)) {
     t.mock.method(provider, 'lookup', async () => { calls.push(provider.name); return { provider: provider.name, success: true }; });
   }

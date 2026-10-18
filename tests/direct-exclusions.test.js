@@ -37,6 +37,8 @@ function rules(value) { store.mustela_exclusions = { version: 1, rules: value };
 function reset() {
   store = { mustela_settings: structuredClone(DEFAULT_SETTINGS) };
   for (const [id, provider] of Object.entries(store.mustela_settings.providers)) {
+    // These policy tests exercise immediate transmissions; spacing has its own clock tests.
+    provider.minIntervalMs = 0;
     Object.assign(provider, { enabled: true, apiKey: 'test-key', ...(id === 'misp' ? { baseUrl: 'https://misp.example', defaultEventId: '42' } : {}) });
   }
   store.mustela_settings.analystAssist = { enabled: true, baseUrl: 'https://assistant.test/v1', apiKey: 'test-key', model: 'test-model' };
