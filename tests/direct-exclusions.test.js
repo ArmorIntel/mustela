@@ -103,17 +103,22 @@ test('keyless pivots and every context menu refuse excluded selections and pages
   }
 });
 
-test('a newly excluded pending lookup stops before the next provider and LLM; removal sends nothing automatically', async (t) => {
+test('a newly excluded pending lookup stops further providers and LLM; removal sends nothing automatically', async (t) => {
   reset();
   instrument(t, () => rules([iocRule]));
   blocked(await send('LOOKUP_IOC', ioc));
-  assert.equal(calls.length, 1);
+  // Two concurrent guards had read the allowed policy before the first
+  // transmission added the rule. Already-started requests cannot be recalled.
+  assert.equal(calls.length, 2);
   assert.equal(calls.some((url) => url.includes('assistant.test')), false);
+  assert.equal(calls.some((url) => url.includes('shodan') || url.includes('misp.example')), false);
+  assert.equal(store.mustela_cache, undefined);
+  assert.equal(store.mustela_history, undefined);
   rules([]);
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
   instrument(t);
   assert.equal((await send('LOOKUP_IOC', { ...ioc, _rerun: 1 })).ok, true);
-  assert.equal(calls.length, 6);
+  assert.equal(calls.length, 7);
   assert.equal((await send('ADD_IOC_TO_MISP', { ioc })).ok, true);
   assert.equal((await send('OPEN_EXTERNAL_PROVIDER', { provider: 'virustotal', ioc })).ok, true);
   assert.equal(navigations.length, 1);
