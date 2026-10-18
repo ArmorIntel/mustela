@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Mustela store artwork</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 1280px; height: 800px; overflow: hidden; background: radial-gradient(ellipse at top left, #172c48, #07111f 75%); color: #eef2ff; font-family: system-ui, sans-serif; }
+  header { position: absolute; left: 64px; top: 46px; width: 430px; }
+  .brand { display: flex; align-items: center; gap: 12px; font-size: 23px; font-weight: 700; color: #7dd3fc; }
+  .brand img { width: 40px; height: 40px; }
+  h1 { font-size: 44px; line-height: 1.1; letter-spacing: -.04em; margin: 28px 0 20px; }
+  p { font-size: 19px; line-height: 1.6; color: #cbd5e1; }
+  .captures { position: absolute; right: 48px; top: 38px; display: flex; gap: 20px; align-items: flex-start; }
+  figure { margin: 0; }
+  figcaption { font-size: 13px; color: #cbd5e1; margin-bottom: 10px; }
+  .capture { display: block; width: 368px; border-radius: 20px; border: 1px solid #ffffff2e; box-shadow: 0 24px 60px #02061750; }
+  footer { position: absolute; bottom: 22px; left: 64px; font-size: 12px; color: #94a3b8; }
+  body.pair header { width: 335px; left: 40px; }
+  body.pair h1 { font-size: 38px; }
+  body.pair .captures { right: 28px; }
+  body.promo { width: 440px; height: 280px; }
+  .promo header { left: 30px; top: 26px; width: 380px; }
+  .promo .brand { font-size: 24px; }
+  .promo h1 { font-size: 35px; margin: 20px 0 12px; }
+  .promo p { font-size: 15px; margin: 0; }
+</style>
+<header>
+  <div class="brand"><img id="logo" alt="">Mustela</div>
+  <h1 id="heading"></h1><p id="description"></p>
+</header>
+<div class="captures"></div>
+<footer id="disclaimer">Actual extension UI · Synthetic demonstration data · No API keys configured</footer>
+</html>

@@ -69,6 +69,32 @@ Local copy/export is explicit and can include IOC, notes, TLP and investigation 
 
 There is **no project backend, telemetry, analytics, extension account system or project cloud sync**. Mustela does not sell user data, use it for advertising, transfer it for purposes unrelated to the single purpose, or use it to determine creditworthiness or for lending. User-configured service requests and explicit pivots are the disclosures described above, not a promise that third parties receive nothing. Recipients control their own retention and reuse; review their policies. API fetches omit browser cookies and referrers and use no-store and bounded timeouts; opened websites do not inherit these safeguards.
 
+## Reproducible artwork
+
+The committed [store assets](assets/) are generated from synthetic fixtures and the actual built extension, not a hand-drawn imitation of its UI:
+
+| Asset | Dimensions | Scene |
+| --- | --- | --- |
+| [01-highlights.png](assets/01-highlights.png) | 1280×800 | Reserved IPs, example domain/URL and a fabricated hash highlighted in a training report |
+| [02-investigation.png](assets/02-investigation.png) | 1280×800 | In-page investigation with honest keyless/unknown results |
+| [03-popup-history.png](assets/03-popup-history.png) | 1280×800 | Current-page list and local history, shown as two cropped views of the same popup |
+| [04-settings.png](assets/04-settings.png) | 1280×800 | Provider settings with every API-key field empty |
+| [05-global-pause.png](assets/05-global-pause.png) | 1280×800 | Real ON and confirmed OFF states side by side |
+| [promo-small.png](assets/promo-small.png) | 440×280 | Small promotional tile |
+
+Regenerate on Linux from the repository root with Node.js, npm and `xvfb` installed:
+
+```sh
+npm ci
+npx playwright install chromium
+npm run store:assets
+npm test
+```
+
+No additional npm dependency is needed. Other platforms can run `npm run build && node scripts/generate-store-assets.mjs` with a graphical display. The generator uses a disposable browser profile; it never reads your everyday browser data. Only `https://report.example.org/brief` is served, directly from the dedicated fixture; other web requests are blocked and service-worker fetches fail closed. No API key is configured and no provider results are fabricated. The fixture history is explicitly synthetic. The artwork follows the existing surfaces described in [DESIGN.md](../../DESIGN.md).
+
+Animations/transitions and carets are disabled, popup time is fixed and capture waits for fonts, scene readiness and stable popup pixels. With the same Playwright Chromium build, OS and fonts, repeated runs produce identical PNGs. Cross-platform/font changes can change pixels: review all six images before publishing. `npm test` checks the exact PNG signature/IHDR dimensions and the report's synthetic indicator set without an image-library dependency. The committed PNGs are tested without launching a browser.
+
 ## Remote code
 
 **No remote code.** Executable JavaScript and styles are packaged with the extension. It does not download or execute remotely hosted code. Provider and Analyst Assist responses are data, not executable scripts; an LLM request does not fetch executable code. The extension-page content security policy restricts scripts to self. Configuration URLs select data/API destinations, not code sources.
