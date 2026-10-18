@@ -11,12 +11,13 @@ function deferred() {
   return { promise, resolve };
 }
 function harness(options = {}) {
-  const state = { paused: false, listener: null, scans: 0, lookup: 0, rendered: 0, observed: false, ...options };
+  const state = { paused: false, listener: null, scans: 0, lookup: 0, rendered: 0, observed: false, observers: 0, listeners: 0, ...options };
   const context = vm.createContext({
-    state, setTimeout, clearTimeout,
+    state, setTimeout, clearTimeout, crypto: { getRandomValues: (bytes) => bytes.fill(1) },
     location: { href: 'https://fixture.example/' },
     NodeFilter: { SHOW_TEXT: 4 },
     MutationObserver: class {
+      constructor(callback) { state.observers++; state.mutate = callback; }
       observe() { state.observed = true; }
       disconnect() { state.observed = false; }
     },
@@ -26,8 +27,10 @@ function harness(options = {}) {
       createTreeWalker: () => { state.scans++; return { nextNode: () => false }; }
     },
     chrome: { runtime: {
-      onMessage: { addListener: (fn) => { state.listener = fn; } },
+      id: 'fixture-extension',
+      onMessage: { addListener: (fn) => { state.listeners++; state.listener = fn; }, removeListener: () => { state.listeners--; } },
       async sendMessage(message) {
+        if (state.failSend) throw new Error('Extension context invalidated.');
         if (message.type === 'GET_PAUSE_STATE') return state.read ? state.read() : { ok: true, data: { paused: state.paused } };
         if (message.type === 'GET_CONTENT_SETTINGS') return { ok: true, data: {} };
         if (message.type === 'GET_DETECTION_POLICY') return state.policy ? state.policy() : { ok: true, data: { rules: [], excluded: false } };
@@ -36,13 +39,62 @@ function harness(options = {}) {
       }
     } }
   });
-  vm.runInContext(source, context);
-  vm.runInContext(`renderPanelSkeleton = () => { closePanel(); panelEl = { remove() {} }; };
+  const instrumented = source.replace('bootstrap();', 'state.run = (code) => eval(code); bootstrap();');
+  vm.runInContext(instrumented, context);
+  state.run(`renderPanelSkeleton = () => { closePanel(); panelEl = { remove() {} }; };
     renderResult = () => { state.rendered++; };
-    renderError = () => { state.rendered++; };`, context);
-  return { state, context, run: (code) => vm.runInContext(code, context),
+    renderError = () => { state.rendered++; };`);
+  return { state, context, run: (code) => state.run(code), reinject: () => vm.runInContext(instrumented, context),
     notify: () => new Promise((resolve) => state.listener({ type: 'PAUSE_STATE_UPDATED', payload: { paused: state.paused } }, {}, resolve)) };
 }
+
+test('double injection during bootstrap and after initialization has one observer, listener and scan', async () => {
+  const h = harness();
+  h.reinject();
+  await tick();
+  const scans = h.state.scans;
+  h.reinject();
+  await tick();
+  assert.equal(h.state.observers, 1);
+  assert.equal(h.state.listeners, 1);
+  assert.equal(h.state.scans, scans);
+});
+
+test('invalidated context disconnects and removes its listener before mutations can scan', async () => {
+  const h = harness();
+  await tick();
+  const scans = h.state.scans;
+  h.context.chrome.runtime.id = undefined;
+  h.state.mutate([]);
+  assert.equal(h.state.observed, false);
+  assert.equal(h.state.listeners, 0);
+  await h.run('scanPage()');
+  assert.equal(h.state.scans, scans);
+  assert.equal(h.context.document.documentElement.dataset.mustelaInjected, undefined);
+});
+
+test('runtime invalidation error disposes even before runtime.id disappears', async () => {
+  const h = harness();
+  await tick();
+  const scans = h.state.scans;
+  h.state.failSend = true;
+  await h.run("sendRuntimeMessage({ type: 'GET_PAUSE_STATE' })");
+  assert.equal(h.state.observed, false);
+  assert.equal(h.state.listeners, 0);
+  await h.run('scanPage()');
+  assert.equal(h.state.scans, scans);
+});
+
+test('invalidation during startup cannot resurrect an observer or scan', async () => {
+  const stale = deferred();
+  const h = harness({ policy: () => stale.promise });
+  h.context.chrome.runtime.id = undefined;
+  stale.resolve({ ok: true, data: { rules: [], excluded: false } });
+  await tick();
+  assert.equal(h.state.observers, 0);
+  assert.equal(h.state.scans, 0);
+  assert.equal(h.state.listeners, 0);
+});
 
 test('content invalidates cached late replies across OFF/ON before any rerun or rendering', async () => {
   const h = harness();

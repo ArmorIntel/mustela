@@ -97,6 +97,7 @@ cleanLegacyDetection();
 
 chrome.runtime.onInstalled.addListener((details) => {
   cleanLegacyDetection();
+  if (details.reason === 'install' || details.reason === 'update') injectExistingTabs();
   if (details.reason === 'install') {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/welcome/welcome.html') });
   }
@@ -135,27 +136,29 @@ chrome.runtime.onInstalled.addListener((details) => {
 const CONTENT_SCRIPT_FILES = ['src/shared/ioc.content-runtime.js', 'src/content/content.js'];
 const CONTENT_STYLE_FILES = ['src/content/content.css'];
 
-async function ensureContentScripts(tabId) {
+async function injectExistingTabs() {
   try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => document.documentElement?.dataset?.mustelaInjected === 'true'
-    });
-    if (results?.[0]?.result) return;
-    await chrome.scripting.insertCSS({ target: { tabId }, files: CONTENT_STYLE_FILES });
-    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+    const tabs = await chrome.tabs.query({});
+    await Promise.all(tabs.filter((tab) => typeof tab.id === 'number' && /^https?:/i.test(tab.url || ''))
+      .map((tab) => injectContentScripts(tab.id)));
   } catch (error) {
-    console.debug('ensureContentScripts skipped or failed', error?.message || error);
+    console.debug('Unable to query existing tabs for content injection', error?.message || error);
   }
 }
 
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+async function injectContentScripts(tabId) {
+  try {
+    await chrome.scripting.insertCSS({ target: { tabId }, files: CONTENT_STYLE_FILES });
+    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+  } catch (error) {
+    console.debug('Content injection skipped or failed', error?.message || error);
+  }
+}
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (changeInfo.status === 'loading' || changeInfo.url !== undefined) {
     await clearDetectedForTab(tabId).catch((error) => console.warn('Unable to clear tab detection state', error));
   }
-  if (changeInfo.status !== 'complete') return;
-  if (!tab?.url || !/^https?:/i.test(tab.url)) return;
-  ensureContentScripts(tabId);
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {

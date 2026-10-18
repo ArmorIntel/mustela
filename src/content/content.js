@@ -1,7 +1,13 @@
+(() => {
+// This guard lives in the extension's isolated world, not in page-controlled DOM.
+if (globalThis.MUSTELA_CONTENT_INSTANCE?.isActive()) return;
+// getRandomValues also works on ordinary HTTP pages, unlike randomUUID.
+const instanceId = [...crypto.getRandomValues(new Uint8Array(16))]
+  .map((byte) => byte.toString(16).padStart(2, '0')).join('');
+let disposed = false;
+const instance = { isActive, dispose };
+globalThis.MUSTELA_CONTENT_INSTANCE = instance;
 const { IOC_TYPES, parseIocsFromText, detectSingleIoc, isProtectedIoc, isExcluded } = globalThis.MUSTELA_SHARED || {};
-if (document?.documentElement) {
-  document.documentElement.dataset.mustelaInjected = 'true';
-}
 const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'OPTGROUP']);
 
 let observer;
@@ -56,7 +62,51 @@ let hoveredMark = null;
 let hoverTipEl;
 let hoverFrame = 0;
 
+function isActive() {
+  if (disposed) return false;
+  try { if (chrome.runtime.id) return true; } catch {}
+  dispose();
+  return false;
+}
+
+function onContextCheck() { isActive(); }
+function onScroll() {
+  if (isActive()) setHoveredMark(null);
+}
+
+function dispose() {
+  if (disposed) return;
+  disposed = true;
+  globallyPaused = true;
+  initialized = false;
+  ++pauseRevision;
+  ++policyRevision;
+  cancelScan();
+  observer?.disconnect();
+  closePanel();
+  if (hoverFrame) cancelAnimationFrame(hoverFrame);
+  stripHighlights();
+  pageIndicatorEl?.remove();
+  pageIndicatorEl = null;
+  hoverTipEl?.remove();
+  hoverTipEl = null;
+  document.removeEventListener?.('click', onDocumentClick, true);
+  document.removeEventListener?.('pointermove', onPointerMove);
+  document.removeEventListener?.('mustela:context-check', onContextCheck);
+  globalThis.window?.removeEventListener('scroll', onScroll, true);
+  try { chrome.runtime.onMessage.removeListener(onRuntimeMessage); } catch {}
+  if (highlightSupported) {
+    if (CSS.highlights.get(HIGHLIGHT_NAME) === iocHighlight) CSS.highlights.delete(HIGHLIGHT_NAME);
+    if (CSS.highlights.get(HOVER_HIGHLIGHT_NAME) === hoverHighlight) CSS.highlights.delete(HOVER_HIGHLIGHT_NAME);
+  }
+  if (document.documentElement?.dataset.mustelaInjected === instanceId) {
+    delete document.documentElement.dataset.mustelaInjected;
+  }
+  if (globalThis.MUSTELA_CONTENT_INSTANCE === instance) delete globalThis.MUSTELA_CONTENT_INSTANCE;
+}
+
 function applyPauseState(paused) {
+  if (!isActive()) return;
   const changed = globallyPaused !== paused;
   globallyPaused = paused;
   if (paused) {
@@ -79,7 +129,7 @@ async function syncPauseState() {
 }
 
 function observePage() {
-  if (initialized && !globallyPaused) observer?.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  if (isActive() && initialized && !globallyPaused) observer?.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
 }
 
 const OWN_UI = '.mustela-panel, .mustela-page-indicator, .mustela-ioc-tip';
@@ -104,6 +154,7 @@ function cancelScan() {
 }
 
 function collectMutations(records) {
+  if (!isActive()) return;
   if (globallyPaused || extensionDisabled || !highlightEnabled) return;
   let changed = false;
   for (const record of records) {
@@ -149,9 +200,11 @@ function mutatePage(write) {
 
 
 async function sendRuntimeMessage(message, fallback = null) {
+  if (!isActive()) return fallback;
   try {
     return await chrome.runtime.sendMessage(message);
-  } catch {
+  } catch (error) {
+    if (/Extension context invalidated/i.test(error?.message || '')) dispose();
     return fallback;
   }
 }
@@ -331,6 +384,7 @@ function setHoveredMark(mark) {
 }
 
 function onPointerMove(event) {
+  if (!isActive()) return;
   if (!marksByNode.size && !hoveredMark) return;
   const { clientX, clientY } = event;
   cancelAnimationFrame(hoverFrame);
@@ -338,6 +392,7 @@ function onPointerMove(event) {
 }
 
 function onDocumentClick(event) {
+  if (!isActive()) return;
   if (globallyPaused || event.button !== 0 || !window.getSelection()?.isCollapsed) return;
   const mark = markAtPoint(event.clientX, event.clientY);
   if (!mark) return;
@@ -369,6 +424,7 @@ function stripHighlights() {
 }
 
 async function publishDetectedIocs(items) {
+  if (!isActive()) return;
   lastDetectedIocs = Array.isArray(items) ? items : [];
   const signature = JSON.stringify(lastDetectedIocs.map((ioc) => [ioc.type, ioc.normalized]).sort());
   if (signature === publishedSignature) return;
@@ -377,6 +433,7 @@ async function publishDetectedIocs(items) {
 }
 
 async function scanPage(reset = true) {
+  if (!isActive()) return [];
   if (reset) {
     cancelScan();
     mutatePage(stripHighlights);
@@ -424,6 +481,7 @@ async function scanPage(reset = true) {
         if (visited >= MAX_SCAN_NODES) break;
         if (Date.now() - sliceStart >= SCAN_SLICE_MS) {
           await new Promise((resolve) => setTimeout(resolve, 0));
+          if (!isActive()) return [];
           sliceStart = Date.now();
         }
       }
@@ -986,7 +1044,8 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+function onRuntimeMessage(message, sender, sendResponse) {
+  if (!isActive()) return;
   if (message?.type === 'EXCLUSIONS_UPDATED') {
     // Never re-run an investigation when rules change. Remove stale results.
     closePanel();
@@ -1031,7 +1090,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     scanPage().then((items) => sendResponse({ ok: true, data: items || [] })).catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
     return true;
   }
-});
+}
 
 async function bootstrap() {
   await syncExclusions();
@@ -1041,6 +1100,7 @@ async function bootstrap() {
     detectionMode = settingsResponse?.data?.detectionMode === 'strict' ? 'strict' : 'balanced';
   } catch {}
   await syncPauseState();
+  if (!isActive()) return;
   initialized = true;
   if (highlightSupported) {
     hoverHighlight.priority = 1;
@@ -1048,11 +1108,18 @@ async function bootstrap() {
     CSS.highlights.set(HOVER_HIGHLIGHT_NAME, hoverHighlight);
     document.addEventListener('click', onDocumentClick, true);
     document.addEventListener('pointermove', onPointerMove, { passive: true });
-    window.addEventListener('scroll', () => setHoveredMark(null), { capture: true, passive: true });
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true });
   }
   observer = new MutationObserver(collectMutations);
   observePage();
   scanPage();
 }
 
+// A new extension context asks invalidated predecessors to release shared page
+// highlights synchronously before it starts. A page event cannot stop a live instance.
+document.dispatchEvent?.(new Event('mustela:context-check'));
+document.addEventListener?.('mustela:context-check', onContextCheck);
+document.documentElement.dataset.mustelaInjected = instanceId;
+chrome.runtime.onMessage.addListener(onRuntimeMessage);
 bootstrap();
+})();

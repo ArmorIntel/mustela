@@ -88,7 +88,7 @@ test('persisted OFF remains effective after a browser and service-worker restart
     await expectAction(nextWorker, true);
     expect(nextWorker).not.toBe(worker);
     const page = await openFixturePage(extension.context, server.urlFor('/iocs.html'));
-    await expect.poll(() => page.locator('html').getAttribute('data-mustela-injected')).toBe('true');
+    await expect.poll(() => page.locator('html').getAttribute('data-mustela-injected')).toMatch(/^[0-9a-f]{32}$/);
     await expectClear(page);
     await openPanel(nextWorker, page, { type: 'ip', normalized: '203.0.113.50' });
     await expectClear(page);
