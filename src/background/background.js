@@ -5,6 +5,8 @@ import { addHistory, clearCache, clearDetectedForTab, clearDisabledPages, clearH
 
 import { createTransmissionGate, pauseFailure } from './pause.js';
 import { createDirectActionGuard } from './direct-actions.js';
+import { isExcluded } from '../shared/exclusions.js';
+import { getExclusionRules } from '../storage/storage.js';
 
 const transmissions = createTransmissionGate();
 function directAction(ioc, sender, token, pageUrls, sourceTabId) {
@@ -324,11 +326,19 @@ async function handleMessage(message, sender) {
         return { ok: false, error: 'Analyst Assist is not configured or disabled — set it up in settings.' };
       }
       const history = await getHistory();
-      const entries = selectCorrelationEntries(history);
-      if (entries.length < 2) return { ok: false, error: 'Not enough eligible investigation history for correlation: internal/reserved IPv4 entries are excluded; at least two eligible entries are required.' };
       const { pageUrl = '', pageTitle = '' } = message?.payload || {};
-      const result = await transmissions.run(token, () => generateCorrelationAnalysis(entries, llm, { pageUrl, pageTitle }));
-      return { ok: true, data: result };
+      const run = directAction(undefined, sender, token, [pageUrl]);
+      return run(async () => {
+        const rules = await getExclusionRules();
+        // Select only after checking the current context and reading current rules.
+        // Keep pause authority immediately around the eventual network operation.
+        return transmissions.run(token, async () => {
+          const entries = selectCorrelationEntries(history, rules);
+          if (entries.length < 2) return { ok: false, error: 'Not enough eligible investigation history for correlation: local exclusion rules and internal/reserved IPv4 entries are excluded; at least two eligible entries are required.' };
+          const result = await generateCorrelationAnalysis(entries, llm, { pageUrl, pageTitle });
+          return { ok: true, data: result };
+        });
+      });
     }
     case 'ADD_IOC_TO_MISP': {
       const settings = await getSettings();
@@ -399,7 +409,7 @@ function sortProviderResults(results) {
   });
 }
 
-function selectCorrelationEntries(history) {
+function selectCorrelationEntries(history, rules) {
   const MAX_IOCS = 10;
   const all = Array.isArray(history) ? history : [];
   const threatPriority = (e) => {
@@ -410,7 +420,9 @@ function selectCorrelationEntries(history) {
       default: return 0;
     }
   };
-  return all.filter((entry) => !isProtectedIoc(entry.ioc || entry))
+  return all.filter((entry) => !isProtectedIoc(entry.ioc || entry)
+      && !isExcluded(rules, { ioc: entry.ioc || entry, pageUrl: entry.pageUrl })
+      && !isExcluded(rules, { pageUrl: entry.ioc?.sourceContext?.pageUrl }))
     .sort((a, b) => {
       const tDiff = threatPriority(b) - threatPriority(a);
       if (tDiff !== 0) return tDiff;
