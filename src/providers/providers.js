@@ -4,11 +4,12 @@ import { validateTlp } from '../shared/tlp.js';
 const PROVIDER_FETCH_TIMEOUT_MS = 12000;
 const MISP_SUPPORTED_TYPES = [IOC_TYPES.IP, IOC_TYPES.DOMAIN, IOC_TYPES.URL, IOC_TYPES.MD5, IOC_TYPES.SHA1, IOC_TYPES.SHA256];
 
-function providerHttpError(provider, status, context = 'lookup') {
+function providerHttpError(provider, status, context = 'lookup', response) {
   const err = new Error(`${provider} HTTP ${status}`);
   err.provider = provider;
   err.status = status;
   err.context = context;
+  if (status === 429) err.retryAfter = response?.headers?.get('Retry-After');
   return err;
 }
 
@@ -139,7 +140,7 @@ async function vtLookup(ioc, configOrKey) {
   else if (ioc.type === IOC_TYPES.URL) url = `https://www.virustotal.com/api/v3/urls/${btoa(ioc.normalized).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}`;
   else url = `https://www.virustotal.com/api/v3/files/${encodeURIComponent(ioc.normalized)}`;
   const response = await providerFetch(url, { headers });
-  if (!response.ok) throw providerHttpError('VirusTotal', response.status, 'lookup');
+  if (!response.ok) throw providerHttpError('VirusTotal', response.status, 'lookup', response);
   const json = await response.json();
   const stats = json.data?.attributes?.last_analysis_stats || {};
   const malicious = Number(stats.malicious || 0) + Number(stats.suspicious || 0);
@@ -164,7 +165,7 @@ async function abuseLookup(ioc, configOrKey) {
     url = `https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ioc.normalized)}&maxAgeInDays=90&verbose=true`;
   }
   const response = await providerFetch(url, { headers: { Key: apiKey, Accept: 'application/json' } });
-  if (!response.ok) throw providerHttpError('AbuseIPDB', response.status, 'lookup');
+  if (!response.ok) throw providerHttpError('AbuseIPDB', response.status, 'lookup', response);
   const json = await response.json();
   const data = json.data || {};
 
@@ -223,7 +224,7 @@ async function shodanLookup(ioc, configOrKey) {
     ? `https://api.shodan.io/shodan/host/search?key=${encodeURIComponent(apiKey)}&query=${encodeURIComponent(ioc.normalized)}`
     : `https://api.shodan.io/shodan/host/${encodeURIComponent(ioc.normalized)}?key=${encodeURIComponent(apiKey)}`;
   const response = await providerFetch(url);
-  if (!response.ok) throw providerHttpError('Shodan', response.status, 'lookup');
+  if (!response.ok) throw providerHttpError('Shodan', response.status, 'lookup', response);
   const json = await response.json();
   if (ioc.type === IOC_TYPES.ASN) {
     return {
@@ -267,7 +268,7 @@ async function mispLookup(ioc, config = {}) {
     headers: mispHeaders(config),
     body: JSON.stringify(payload)
   });
-  if (!response.ok) throw providerHttpError('MISP', response.status, 'lookup');
+  if (!response.ok) throw providerHttpError('MISP', response.status, 'lookup', response);
 
   const json = await response.json();
   const attributes = extractMispAttributes(json);

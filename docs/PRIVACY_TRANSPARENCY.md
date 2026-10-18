@@ -133,6 +133,12 @@ The operations below apply subject to this policy.
 
 ### Operations and destinations
 
+Investigation scheduling does not add a recipient or new request trigger. Concurrent requests for the same IOC/cache profile reuse one pending investigation (including its optional automatic summary, using the originating investigation's context); explicit Re-run waits for it and starts a fresh investigation. Every caller still checks current exclusions and pause before receiving the shared result. Local history retains each caller's context.
+
+Lookup start intervals default to 15 seconds for VirusTotal and 1 second for Shodan, with a finite, nonnegative `providers.<id>.minIntervalMs` advanced override; AbuseIPDB/MISP default to no added spacing. HTTP 429 blocks that provider's lookups until Retry-After (seconds or HTTP date), or 60 seconds for missing/invalid headers. Provider cards report remaining seconds; these refusals are not cached and do not trigger automatic provider retries. Ordinary interval waits recheck current transmission policy before sending. Confirmed pause discards waiting work, including queued re-runs; resume does not replay it. Already-started requests cannot be recalled.
+
+Pending promises, spacing and cooldown deadlines are in worker memory only and reset when the worker restarts. They do not count daily use or coordinate other clients sharing the key. Connection tests, explicit MISP writes, LLM calls and browser pivots retain their separate existing behavior; scheduling does not impose a new limit on them. The existing 12-second provider network timeout begins at transmission, not during local spacing waits.
+
 Paths below are relative to the selected instance/endpoint base URL where applicable. API-key validation is itself a network operation, not an investigation prompt.
 
 | Operation | Destination | Method/path | Data sent | Authentication | Trigger |

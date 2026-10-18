@@ -20,7 +20,7 @@ async function instrument(context) {
     chrome.tabs.create = async (details) => { navigations.push(details); return { id: 999, ...details }; };
     await chrome.storage.local.set({ mustela_settings: {
       highlightEnabled: true, detectionMode: 'balanced', cacheTtlMinutes: 30,
-      providers: Object.fromEntries(['virustotal', 'abuseipdb', 'shodan', 'misp'].map((id) => [id, { enabled: true, apiKey: 'test-key', baseUrl: id === 'misp' ? 'https://misp.example' : '', defaultEventId: '42' }])),
+      providers: Object.fromEntries(['virustotal', 'abuseipdb', 'shodan', 'misp'].map((id) => [id, { minIntervalMs: 0, enabled: true, apiKey: 'test-key', baseUrl: id === 'misp' ? 'https://misp.example' : '', defaultEventId: '42' }])),
       analystAssist: { enabled: true, baseUrl: 'https://assistant.test/v1', apiKey: 'test-key', model: 'test-model' }
     } });
   });

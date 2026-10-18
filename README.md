@@ -131,6 +131,16 @@ Email can be personal data. Enabled, fully configured **Analyst Assist** can aut
 
 ## Setting up providers
 
+### Lookup scheduling and quotas
+
+Repeated requests for the same IOC and cache profile share the pending investigation. An explicit **Re-run** waits for existing work, then starts a fresh investigation rather than overlapping it. Each caller still passes current pause and exclusion checks.
+
+Provider lookups are paced independently: VirusTotal defaults to a 15-second minimum start interval ([public API: 4 requests/minute, 500/day](https://docs.virustotal.com/reference/public-vs-premium-api)); Shodan defaults to 1 second ([documented API rate limit](https://book.shodan.io/changelog/2025-11-10/)). AbuseIPDB and MISP have no additional spacing by default. Advanced configuration can set a finite, nonnegative `providers.<id>.minIntervalMs` number through the existing settings-save message; there is no new settings control. This is not a daily quota counter or a guarantee about usage by other clients sharing a key.
+
+After a lookup returns HTTP 429, its provider card shows **quota reached, retry possible in N s**. `Retry-After` seconds or an HTTP date set the deadline; missing/invalid headers use 60 seconds. Investigating during that cooldown does not call that provider or silently retry it; other providers can still return data. Quota refusals are not cached. Ordinary interval waits are cancelled by global pause, and resuming never replays queued work. Existing requests retain their 12-second network timeout, which starts only when sent.
+
+Scheduling state is local to the running service worker and resets on worker restart. It applies to investigation lookups, not connection tests, explicit MISP writes, LLM calls or website pivots. Check your provider plan and remaining credits before investigating; external usage and daily limits can still produce 429 responses.
+
 Mustela detects and highlights IOC out of the box — no API keys required.
 
 Literal IPv4 addresses in the supported private/reserved ranges stay detected and highlighted, with an **Internal / reserved** badge in the investigation panel and manual lookup. VirusTotal, AbuseIPDB, Shodan, and their external pivots are blocked before cache reuse, regardless of keys or reruns. Analyst Assist summaries are skipped, even with a local endpoint; protected history entries are excluded from correlation before selection, with at least two eligible entries required. Blocking is not a clean verdict.
