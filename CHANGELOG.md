@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- Store-ready English listing and data-usage declarations for Chrome and Edge submission, with manifest-aligned short-description and keyword-limit tests. Clarify packaged-only code and MISP pivot navigation in the privacy policy; no runtime or permission changes.
 - Keyless local exclusion editor for exact page URLs, normalized exact IOC values and label-boundary host patterns, with atomic validation and persistent rules. Update detection/highlights and stale page results across loaded tabs and open popups without restarting or automatically investigating. Refusals identify the rule; remove it explicitly in settings before retrying, including legacy page pauses. No permission or recipient changes; previously shared data cannot be withdrawn.
 
 ### Security

@@ -145,7 +145,7 @@ Paths below are relative to the selected instance/endpoint base URL where applic
 | Analyst Assist configuration validation | Your chosen OpenAI-compatible endpoint, local or remote | `GET /models` | Model-list request; no investigation prompt (the configured model is checked against the response locally) | API key in `Authorization: Bearer …` header | Configuration validation with base URL and key |
 | Analyst Assist investigation summary | Your chosen OpenAI-compatible endpoint, local or remote | `POST /chat/completions` | Configured model and summary prompt described below | API key in `Authorization: Bearer …` header | Automatically during an investigation not served from cache when enabled with base URL, key, and model; no distinct AI click |
 | Analyst Assist correlation | Same chosen OpenAI-compatible endpoint | `POST /chat/completions` | Configured model and prompt built from 2–10 selected history entries, plus available current-page context | API key in `Authorization: Bearer …` header | Dedicated correlation action with Analyst Assist enabled/configured and at least 2 history entries |
-| Manual external pivot | Destination provider website | Normal browser navigation to the pivot URL | IOC embedded in destination URL | Normal browser/site authentication, if any; no extension API key required | Opening an external pivot |
+| Manual external pivot | Destination provider website | Normal browser navigation to the pivot URL | Public-provider pivots embed the IOC in the destination URL; the MISP pivot opens its attribute search page without embedding the IOC | Normal browser/site authentication, if any; no extension API key required | Opening an external pivot |
 
 MISP uses `POST` for both searching and adding: **POST does not always mean a write**. Lookup searches existing attributes; only the dedicated add action creates an attribute. MISP supports IP, domain, URL, MD5, SHA1, and SHA256, not ASN/subnet. Its label as an internal provider does not keep data inside the browser: requests go to the chosen instance.
 
@@ -225,6 +225,12 @@ Before investigating sensitive pages or IOC:
 - Use only authorized MISP events and review the comment before adding an attribute.
 - Remember that external pivots can disclose an IOC even without API keys.
 - Clear local cache/history when appropriate, without assuming this deletes previously transmitted data remotely.
+
+## Remote code and store disclosures
+
+**No remote code:** executable JavaScript and styles ship in the extension package; Mustela does not download or execute remotely hosted code. Provider/Analyst Assist responses are data, not executable scripts. The extension-page content security policy restricts scripts to self.
+
+[Store listing and data-usage declarations](store/LISTING.md) disclose website content, investigation page URL/title and selected history, and locally stored authentication keys with their optional recipients and triggers. Email IOC and page/provider context can contain personally identifiable information. Mustela does not sell user data, use it for advertising, transfer it for unrelated purposes, or use it for creditworthiness or lending. The optional service requests and explicit sharing actions above still disclose data to recipients under their own policies.
 
 ## Chrome Web Store / public-release wording guidance
 
