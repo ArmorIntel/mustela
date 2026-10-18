@@ -1,9 +1,13 @@
 # Local exclusion rule API
 
-There is no configuration UI yet. Stored rules guard direct investigations,
-automatic investigation summaries, provider pivots and MISP lookup/add actions.
-They do not filter correlation, copy/export or automatic detection; existing
-exact page pause detection behavior remains unchanged. See
+Manage rules without keys in Settings → **Local exclusions**: add a typed row,
+edit its value or remove it, then choose **Save exclusions**. Validation errors
+identify the row and leave the previously saved list intact. Legacy page pauses
+are listed separately with explicit removal controls. Stored rules filter page
+detection/highlights and guard direct investigations, automatic summaries,
+provider pivots, MISP lookup/add and correlation history. Local copy/export is
+not restricted. Changes propagate to loaded pages and open popups, invalidate
+stale detections and close panels without starting investigations. See
 [Privacy & Transparency](PRIVACY_TRANSPARENCY.md#direct-action-exclusions) for
 the guarded paths and limits.
 
@@ -76,8 +80,13 @@ their scope.
 `saveExclusionRules([])` clears only configured rules; existing legacy pauses
 remain until removed through `setPageDisabled` or `clearDisabledPages`. The save
 result contains configured rules; read again for the effective union. New rules
-are not written into the old pause list and do not change the existing page pause
-checks. No new rules are exposed to untrusted pages. The background re-reads the
+are not written into the old pause list. The legacy `isPageDisabled` helper remains
+an exact pause-list check; detection now uses the effective union instead. Rules
+are supplied to the isolated extension content script, not the website's DOM.
+The background re-reads the
 effective rules before direct outputs and refuses when either the IOC or any
 available source/tab/frame page matches. Refusals use `MUSTELA_EXCLUDED` with an
-explanation; unreadable rules fail closed with `MUSTELA_EXCLUSION_UNAVAILABLE`.
+explanation naming the matching rule and requiring explicit removal in settings;
+unreadable rules fail closed with `MUSTELA_EXCLUSION_UNAVAILABLE`. There is no
+one-time override. Removal never replays refused actions or withdraws data
+already transmitted to recipients.

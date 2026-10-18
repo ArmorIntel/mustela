@@ -5,8 +5,28 @@ import { addHistory, clearCache, clearDetectedForTab, clearDisabledPages, clearH
 
 import { createTransmissionGate, pauseFailure } from './pause.js';
 import { createDirectActionGuard } from './direct-actions.js';
-import { isExcluded } from '../shared/exclusions.js';
-import { getExclusionRules } from '../storage/storage.js';
+import { isExcluded, findExclusion, exclusionReason } from '../shared/exclusions.js';
+import { getExclusionRules, getConfiguredExclusionRules, getDisabledPages, saveExclusionRules } from '../storage/storage.js';
+
+async function detectionPolicy(pageUrl) {
+  const rules = await getExclusionRules();
+  const rule = findExclusion(rules, { pageUrl });
+  return { rules, excluded: !!rule, rule, reason: rule ? exclusionReason(rule) : '' };
+}
+
+async function filterDetected(items, pageUrl) {
+  const { rules, excluded } = await detectionPolicy(pageUrl);
+  return excluded ? [] : items.filter((ioc) => !isExcluded(rules, { pageUrl: ioc.sourceContext?.pageUrl, ioc }));
+}
+
+async function notifyExclusions() {
+  const tabs = await chrome.tabs.query({});
+  await Promise.allSettled(tabs.filter((tab) => typeof tab.id === 'number').map(async (tab) => {
+    await clearDetectedForTab(tab.id);
+    await chrome.tabs.sendMessage(tab.id, { type: 'EXCLUSIONS_UPDATED' });
+  }));
+  try { await chrome.runtime.sendMessage({ type: 'EXCLUSIONS_UPDATED' }); } catch {}
+}
 
 const transmissions = createTransmissionGate();
 function directAction(ioc, sender, token, pageUrls, sourceTabId) {
@@ -211,7 +231,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 const CONTENT_MESSAGES = new Set([
   'GET_CONTENT_SETTINGS', 'PAGE_IOCS_DETECTED', 'GET_PAUSE_STATE',
   'LOOKUP_IOC', 'OPEN_EXTERNAL_PROVIDER', 'GET_HISTORY_ENTRY',
-  'SAVE_HISTORY_NOTE', 'SAVE_HISTORY_TLP', 'IS_PAGE_DISABLED', 'ADD_IOC_TO_MISP'
+  'SAVE_HISTORY_NOTE', 'SAVE_HISTORY_TLP', 'IS_PAGE_DISABLED', 'GET_DETECTION_POLICY', 'ADD_IOC_TO_MISP'
 ]);
 
 function isMessageAuthorized(type, sender) {
@@ -242,13 +262,22 @@ async function handleMessage(message, sender) {
     case 'PAGE_IOCS_DETECTED': {
       const tabId = sender.tab?.id;
       if (typeof tabId === 'number') {
-        await saveDetectedForTab(tabId, message.payload || []);
+        await saveDetectedForTab(tabId, await filterDetected(message.payload || [], sender.url || sender.tab?.url));
       }
       return { ok: true };
     }
     case 'GET_DETECTED_IOCS': {
       const tabId = message.payload?.tabId;
-      return { ok: true, data: await getDetectedForTab(tabId) };
+      return { ok: true, data: await filterDetected(await getDetectedForTab(tabId)) };
+    }
+    case 'GET_DETECTION_POLICY':
+      return { ok: true, data: await detectionPolicy(/^https?:/.test(sender.url) ? sender.url : message.payload?.url) };
+    case 'GET_EXCLUSIONS':
+      return { ok: true, data: { rules: await getConfiguredExclusionRules(), pausedPages: await getDisabledPages() } };
+    case 'SAVE_EXCLUSIONS': {
+      const rules = await saveExclusionRules(message.payload);
+      await notifyExclusions();
+      return { ok: true, data: rules };
     }
     case 'GET_PAUSE_STATE':
       return { ok: true, data: await transmissions.getState(), ...(transitionError ? { transitionError } : {}) };
@@ -297,8 +326,11 @@ async function handleMessage(message, sender) {
       return { ok: true, data: await saveHistoryTlp(message.payload?.historyKey, message.payload?.tlp) };
     case 'IS_PAGE_DISABLED':
       return { ok: true, data: await isPageDisabled(message.payload?.url) };
-    case 'SET_PAGE_DISABLED':
-      return { ok: true, data: await setPageDisabled(message.payload?.url, !!message.payload?.disabled) };
+    case 'SET_PAGE_DISABLED': {
+      const disabled = await setPageDisabled(message.payload?.url, !!message.payload?.disabled);
+      await notifyExclusions();
+      return { ok: true, data: disabled };
+    }
     case 'CLEAR_CACHE':
       await clearCache();
       return { ok: true };
@@ -307,6 +339,7 @@ async function handleMessage(message, sender) {
       return { ok: true };
     case 'CLEAR_DISABLED_PAGES':
       await clearDisabledPages();
+      await notifyExclusions();
       return { ok: true };
     case 'TEST_API_KEY': {
       const providerId = message.payload?.provider;

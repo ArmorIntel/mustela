@@ -82,6 +82,20 @@ Extension interfaces use `GET_PAUSE_STATE` or `SET_PAUSE_STATE` with `payload: {
 
 Once OFF is confirmed, the background rejects investigations/reruns, provider pivots, correlation, MISP adds, API-key tests, and investigation context menus, even from an already-open interface or without API keys. Interrupted investigations cannot continue after ON; resuming preserves preferences and never replays blocked actions. Already-started requests may finish: pause does not recall transmitted data, delete remote data, or stop autonomous traffic from websites already open. See [the pause network contract](docs/PRIVACY_TRANSPARENCY.md#global-transmission-pause).
 
+## Local exclusions
+
+Open Settings → **Local exclusions**; no API key is required. Choose **Add exclusion**, select a kind, enter its value, and choose **Save exclusions**. Edit a row or remove it and save again to change the list. Invalid input (including regex) identifies the row without replacing previously saved rules.
+
+- **Exact page URL** matches the complete HTTP(S) URL byte-for-byte, including case, path, query and fragment, not equivalent spellings or other pages.
+- **Exact IOC** requires a type and matches its normalized whole value (including supported refanging). URL path/query and email local-part case remain significant.
+- **Host pattern** matches the exact host, or subdomains with `*.host`; the wildcard does not include the bare host. Hosts also exclude matching domain/URL IOC, not arbitrary text or IP IOC.
+
+Changes are saved only in this browser profile and update loaded pages and open popups. Excluded pages lose detection, highlights and stale page results; allowed pages omit excluded values, including dynamically added text. Rule changes close stale investigation panels but never start/replay investigations. Background guards also block direct investigations, provider pivots, MISP and excluded correlation history.
+
+A refusal names its matching rule. There is no one-time override: explicitly remove the rule in settings, save, then retry your action. The popup's page-disable button creates a legacy exact-page pause; remove it in settings under **Paused page** (or reset the paused-page list), not with a popup bypass. Global pause and other protections still apply after removal. Unexcluded detection and supported pivots remain usable without keys.
+
+Exclusions do not recall in-flight requests, delete cache/history, redact arbitrary text, restrict local copy/export, stop website traffic, or withdraw data already shared with recipients. See [rule syntax](docs/EXCLUSION_RULES.md) and [privacy limits](docs/PRIVACY_TRANSPARENCY.md#direct-action-exclusions).
+
 ## Copy a Defender hunting query
 
 In the popup's **Manual lookup**, enter exactly one IPv4, domain, HTTP(S) URL, MD5, SHA1, or SHA256 and choose **Copy Defender KQL**. This local action needs no API keys or Analyst Assist, leaves the popup open, and does not investigate, save history, or contact Microsoft. Paste and run the query yourself in **Microsoft Defender XDR Advanced Hunting**, with **Defender for Endpoint telemetry** available.

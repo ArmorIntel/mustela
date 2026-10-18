@@ -1,4 +1,4 @@
-const { IOC_TYPES, parseIocsFromText, detectSingleIoc, isProtectedIoc } = globalThis.MUSTELA_SHARED || {};
+const { IOC_TYPES, parseIocsFromText, detectSingleIoc, isProtectedIoc, isExcluded } = globalThis.MUSTELA_SHARED || {};
 if (document?.documentElement) {
   document.documentElement.dataset.mustelaInjected = 'true';
 }
@@ -9,6 +9,24 @@ let panelEl;
 let pageIndicatorEl;
 let lastDetectedIocs = [];
 let extensionDisabled = false;
+let exclusionRules = [];
+let policyRevision = 0;
+
+async function syncExclusions() {
+  const revision = ++policyRevision;
+  // Invalidate in-flight scans and results before awaiting authority.
+  extensionDisabled = true;
+  cancelScan();
+  stripHighlights();
+  updatePageIndicator(0);
+  publishedSignature = '';
+  if (initialized) await publishDetectedIocs([]);
+  const response = await sendRuntimeMessage({ type: 'GET_DETECTION_POLICY', payload: { url: location.href } });
+  if (revision !== policyRevision) return;
+  exclusionRules = response?.ok ? response.data.rules : [];
+  extensionDisabled = !response?.ok || response.data.excluded;
+  if (initialized) await scanPage();
+}
 let highlightEnabled = true;
 let detectionMode = 'balanced';
 let globallyPaused = true; // Fail closed until the background confirms initialization.
@@ -228,7 +246,8 @@ function downloadTextFile(filename, content, mimeType = 'application/json') {
 function highlightNode(node) {
   if (!highlightEnabled) return [];
   const text = node.nodeValue;
-  const matches = parseIocsFromText(text.slice(0, MAX_TEXT_LENGTH), { mode: detectionMode });
+  const matches = parseIocsFromText(text.slice(0, MAX_TEXT_LENGTH), { mode: detectionMode })
+    .filter((ioc) => !isExcluded(exclusionRules, { pageUrl: location.href, ioc }));
   if (!matches.length) return [];
 
   const detected = matches.map((match) => ({
@@ -968,6 +987,12 @@ function escapeHtml(value) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'EXCLUSIONS_UPDATED') {
+    // Never re-run an investigation when rules change. Remove stale results.
+    closePanel();
+    syncExclusions().then(() => sendResponse({ ok: true }));
+    return true;
+  }
   if (message?.type === 'MUSTELA_ACTION_BLOCKED' && ['MUSTELA_EXCLUDED', 'MUSTELA_EXCLUSION_UNAVAILABLE'].includes(message.code)) {
     syncPauseState().then(() => {
       if (!initialized || globallyPaused) return;
@@ -988,9 +1013,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
   if (message?.type === 'SET_PAGE_DISABLED') {
-    extensionDisabled = !!message.payload?.disabled;
-    scanPage();
-    sendResponse({ ok: true });
+    syncExclusions().then(() => sendResponse({ ok: true }));
     return true;
   }
   if (message?.type === 'SETTINGS_UPDATED') {
@@ -1011,10 +1034,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function bootstrap() {
-  try {
-    const disabledResponse = await sendRuntimeMessage({ type: 'IS_PAGE_DISABLED', payload: { url: location.href } });
-    extensionDisabled = !!disabledResponse?.data;
-  } catch {}
+  await syncExclusions();
   try {
     const settingsResponse = await sendRuntimeMessage({ type: 'GET_CONTENT_SETTINGS' });
     highlightEnabled = settingsResponse?.data?.highlightEnabled !== false;

@@ -10,8 +10,8 @@ function deferred() {
   const promise = new Promise((done) => { resolve = done; });
   return { promise, resolve };
 }
-function harness() {
-  const state = { paused: false, listener: null, scans: 0, lookup: 0, rendered: 0, observed: false };
+function harness(options = {}) {
+  const state = { paused: false, listener: null, scans: 0, lookup: 0, rendered: 0, observed: false, ...options };
   const context = vm.createContext({
     state, setTimeout, clearTimeout,
     location: { href: 'https://fixture.example/' },
@@ -30,7 +30,7 @@ function harness() {
       async sendMessage(message) {
         if (message.type === 'GET_PAUSE_STATE') return state.read ? state.read() : { ok: true, data: { paused: state.paused } };
         if (message.type === 'GET_CONTENT_SETTINGS') return { ok: true, data: {} };
-        if (message.type === 'IS_PAGE_DISABLED') return { ok: true, data: false };
+        if (message.type === 'GET_DETECTION_POLICY') return state.policy ? state.policy() : { ok: true, data: { rules: [], excluded: false } };
         if (message.type === 'LOOKUP_IOC') { state.lookup++; return state.response.promise; }
         return { ok: true };
       }
@@ -91,5 +91,33 @@ test('failed content initialization is fail-closed and a later confirmed ON reco
   assert.equal(h.state.observed, false);
   h.state.read = null;
   await h.notify();
+  assert.ok(h.state.scans > 0);
+});
+
+test('exclusion changes invalidate late panel replies without replay after removal', async () => {
+  const h = harness();
+  await tick();
+  h.state.response = deferred();
+  const opening = h.run("openPanel({ type: 'ip', normalized: '8.8.8.8' }, false)");
+  await tick();
+  h.state.policy = async () => ({ ok: true, data: { rules: [], excluded: true } });
+  await new Promise((resolve) => h.state.listener({ type: 'EXCLUSIONS_UPDATED' }, {}, resolve));
+  assert.equal(h.run('extensionDisabled'), true);
+  h.state.policy = null;
+  await new Promise((resolve) => h.state.listener({ type: 'EXCLUSIONS_UPDATED' }, {}, resolve));
+  h.state.response.resolve({ ok: true, data: { cached: true } });
+  await opening;
+  assert.equal(h.state.lookup, 1);
+  assert.equal(h.state.rendered, 0);
+  assert.equal(h.run('panelEl'), null);
+});
+
+test('unavailable exclusion policy fails detection closed and a new confirmed policy recovers', async () => {
+  const h = harness({ policy: async () => { throw new Error('Unavailable'); } });
+  await tick();
+  assert.equal(h.state.scans, 0);
+  assert.equal(h.run('extensionDisabled'), true);
+  h.state.policy = null;
+  await new Promise((resolve) => h.state.listener({ type: 'EXCLUSIONS_UPDATED' }, {}, resolve));
   assert.ok(h.state.scans > 0);
 });

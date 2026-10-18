@@ -25,7 +25,8 @@ function render(disabled) {
   const btn = document.getElementById('toggleBtn');
   btn.classList.remove('power-on', 'power-off');
   btn.classList.add(disabled ? 'power-on' : 'power-off');
-  btn.title = disabled ? 'Enable extension on this page' : 'Disable extension on this page';
+  btn.disabled = disabled;
+  btn.title = disabled ? 'Remove the matching exclusion explicitly in settings before retrying' : 'Disable extension on this page';
   btn.setAttribute('aria-label', btn.title);
 }
 
@@ -669,8 +670,9 @@ async function init() {
   mountGlobalPause();
   const tab = await getActiveTab();
   const url = tab?.url || '';
-  const disabledRes = await send('IS_PAGE_DISABLED', { url });
-  let disabled = !!disabledRes?.data;
+  const disabledRes = await send('GET_DETECTION_POLICY', { url });
+  let disabled = !disabledRes?.ok || disabledRes.data.excluded;
+  document.getElementById('exclusionStatus').textContent = disabledRes?.data?.reason || (!disabledRes?.ok ? 'Unable to verify local exclusions. Actions remain subject to background checks.' : '');
   render(disabled);
 
   const openCurrentIocInvestigation = async (ioc) => {
@@ -726,6 +728,24 @@ async function init() {
   renderHistory(history, url, currentIocs, openHistoryInvestigation, toggleHistoryPin);
   renderInsight(findSameIocHistory(history, currentIocs) || history.find((entry) => entry?.pageUrl === url) || history[0] || null);
 
+  let policyRefresh = 0;
+  async function refreshExclusions() {
+    const revision = ++policyRefresh;
+    const response = await send('GET_DETECTION_POLICY', { url });
+    if (revision !== policyRefresh) return;
+    disabled = !response?.ok || response.data.excluded;
+    const items = tab?.id && !disabled ? await getCurrentPageIocs(tab.id) : [];
+    if (revision !== policyRefresh) return;
+    currentIocs = hydrateCurrentIocs(items, history);
+    render(disabled);
+    document.getElementById('exclusionStatus').textContent = response?.data?.reason || (!response?.ok ? 'Unable to verify local exclusions.' : '');
+    renderSummary(currentIocs, disabled, openCurrentIocInvestigation, openHistoryInvestigation);
+    renderHistory(history, url, currentIocs, openHistoryInvestigation, toggleHistoryPin);
+  }
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === 'EXCLUSIONS_UPDATED') refreshExclusions();
+  });
+
   const llm = settings?.analystAssist || {};
   const llmAvailable = !!(llm.enabled && llm.baseUrl && llm.apiKey && llm.model);
   mountCorrelation(history, url, tab?.title || '', llmAvailable);
@@ -738,19 +758,9 @@ async function init() {
   });
 
   document.getElementById('toggleBtn').addEventListener('click', async () => {
-    disabled = !disabled;
-    await send('SET_PAGE_DISABLED', { url, disabled });
-    if (tab?.id) {
-      try {
-        await chrome.tabs.sendMessage(tab.id, { type: 'SET_PAGE_DISABLED', payload: { disabled } });
-      } catch {}
-    }
-    render(disabled);
-    currentIocs = tab?.id && !disabled ? await getCurrentPageIocs(tab.id) : [];
-    currentIocs = hydrateCurrentIocs(currentIocs, history);
-    renderSummary(currentIocs, disabled, openCurrentIocInvestigation, openHistoryInvestigation);
-    renderHistory(history, url, currentIocs, openHistoryInvestigation, toggleHistoryPin);
-    renderInsight(findSameIocHistory(history, currentIocs) || history.find((entry) => entry?.pageUrl === url) || history[0] || null);
+    if (disabled) return;
+    const response = await send('SET_PAGE_DISABLED', { url, disabled: true });
+    if (response?.ok) await refreshExclusions();
   });
 
   document.getElementById('investigateBtn').addEventListener('click', async () => {

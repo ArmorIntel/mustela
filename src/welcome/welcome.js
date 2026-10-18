@@ -1,3 +1,6 @@
+import { mountExclusionsEditor } from './exclusions-editor.js';
+
+mountExclusionsEditor();
 let hasUnsavedChanges = false;
 let toastTimer;
 

@@ -15,7 +15,7 @@ async function fixture(page) {
       onMessage: { addListener(fn) { window.notify = fn; } },
       async sendMessage(message) {
         if (message.type === 'PAGE_IOCS_DETECTED') metrics.messages.push(message.payload);
-        return { ok: true, data: message.type === 'GET_PAUSE_STATE' ? { paused: false } : message.type === 'IS_PAGE_DISABLED' ? false : {} };
+        return { ok: true, data: message.type === 'GET_PAUSE_STATE' ? { paused: false } : message.type === 'GET_DETECTION_POLICY' ? { rules: [], excluded: false } : {} };
       }
     } };
   });

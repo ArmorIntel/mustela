@@ -21,7 +21,8 @@ export async function checkIocRuntime(root) {
 
   let expected;
   try {
-    expected = Buffer.from(generateContentIocRuntime(source));
+    const exclusions = await readFile(path.join(root, 'src/shared/exclusions.js'), 'utf8');
+    expected = Buffer.from(generateContentIocRuntime(source, exclusions));
   } catch (cause) {
     throw failure('Cannot generate runtime from src/shared/ioc.js', cause);
   }
