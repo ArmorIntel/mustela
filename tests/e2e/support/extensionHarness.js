@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { chromium } from '@playwright/test';
+import { chromium, expect } from '@playwright/test';
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const extensionPath = path.join(repoRoot, 'dist', 'chrome');
@@ -20,7 +20,8 @@ export async function startFixtureServer() {
     '/ipv6-iocs.html': await readFixture('ipv6-iocs.html'),
     '/defanged-iocs.html': await readFixture('defanged-iocs.html'),
     '/dynamic-iocs.html': await readFixture('dynamic-iocs.html'),
-    '/many-iocs.html': await readFixture('many-iocs.html')
+    '/many-iocs.html': await readFixture('many-iocs.html'),
+    '/framework-iocs.html': await readFixture('framework-iocs.html')
   };
 
   const server = http.createServer((req, res) => {
@@ -107,6 +108,33 @@ export async function openFixturePage(context, url) {
   const page = await context.newPage();
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   return page;
+}
+
+// Highlights are CSS Custom Highlight ranges painted over the page text, not
+// DOM elements. Read what the analyst sees: non-empty ranges in document order.
+export function iocHighlights(page, scope = 'html', text = null) {
+  const locate = (index) => page.evaluate(({ scope, text, index }) => {
+    const ranges = [...(CSS.highlights.get('mustela-ioc') || [])]
+      .filter((range) => !range.collapsed && range.startContainer.isConnected
+        && range.startContainer.parentElement?.closest(scope)
+        && (text === null || range.toString().includes(text)))
+      .sort((a, b) => a.compareBoundaryPoints(Range.START_TO_START, b));
+    if (index === null) return ranges.map((range) => range.toString());
+    const range = ranges[index];
+    if (!range) return null;
+    range.startContainer.parentElement.scrollIntoView({ block: 'center' });
+    const rect = range.getClientRects()[0];
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }, { scope, text, index });
+  return {
+    texts: () => locate(null),
+    count: async () => (await locate(null)).length,
+    async click(index = 0) {
+      await expect.poll(async () => (await locate(null)).length > index).toBe(true);
+      const point = await locate(index);
+      await page.mouse.click(point.x, point.y);
+    }
+  };
 }
 
 export async function getServiceWorker(context) {

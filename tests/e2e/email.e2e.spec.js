@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startFixtureServer, launchExtensionContext, openFixturePage, openPopup, bindPopupToTab, getServiceWorker } from './support/extensionHarness.js';
+import { startFixtureServer, launchExtensionContext, openFixturePage, openPopup, bindPopupToTab, getServiceWorker, iocHighlights } from './support/extensionHarness.js';
 
 test('email scan, local notes, export and case-sensitive history need no providers or navigation', async () => {
   const server = await startFixtureServer();
@@ -16,15 +16,15 @@ test('email scan, local notes, export and case-sensitive history need no provide
       if (/^https?:/.test(request.url()) && !request.url().startsWith(server.baseUrl)) external.push(request.url());
     });
     const page = await openFixturePage(context, server.urlFor('/email-iocs.html'));
-    await expect(page.locator('#report .mustela-highlight')).toHaveCount(3);
-    await expect(page.locator('#invalid .mustela-highlight, textarea .mustela-highlight, [contenteditable] .mustela-highlight')).toHaveCount(0);
+    await expect.poll(() => iocHighlights(page, '#report').count()).toBe(3);
+    expect(await iocHighlights(page, '#invalid, textarea, [contenteditable]').count()).toBe(0);
     await expect(page.locator('#report')).toHaveText('Contact analyst+tag@evil.test and First.Last@EVIL.TEST. Compare first.last@evil.test.');
     let popup = await bindPopupToTab(context, await openPopup(context, extensionId), page);
     await expect(popup.locator('#iocList')).toContainText('First.Last@evil.test');
     expect(await worker.evaluate(() => emailRequests)).toEqual([]);
     expect(external).toEqual([]);
     await popup.close();
-    await page.locator('#report .mustela-highlight').nth(1).click();
+    await iocHighlights(page, '#report').click(1);
     await expect(page.locator('.mustela-panel')).toContainText('First.Last@evil.test');
     await expect(page.locator('.mustela-panel')).toContainText('no compatible reputation provider');
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -62,13 +62,13 @@ test('email scan, local notes, export and case-sensitive history need no provide
     }
     expect(context.pages()).toHaveLength(tabsBefore);
     await popup.locator('#toggleBtn').click();
-    await expect(page.locator('.mustela-highlight')).toHaveCount(0);
+    await expect.poll(() => iocHighlights(page).count()).toBe(0);
     await worker.evaluate(async () => {
       const settings = (await chrome.storage.local.get('mustela_settings')).mustela_settings || {};
       await chrome.storage.local.set({ mustela_settings: { ...settings, analystAssist: { enabled: true, baseUrl: 'https://llm.test/v1', apiKey: 'fixture-only', model: 'test' } } });
     });
     await page.reload();
-    await expect(page.locator('.mustela-highlight')).toHaveCount(0);
+    await expect.poll(() => iocHighlights(page).count()).toBe(0);
     expect(await worker.evaluate(() => emailRequests)).toEqual([]);
     expect(external).toEqual([]);
   } finally {

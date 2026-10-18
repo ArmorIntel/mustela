@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
-import { startFixtureServer, launchExtensionContext, openFixturePage, getServiceWorker } from './support/extensionHarness.js';
+import { startFixtureServer, launchExtensionContext, openFixturePage, getServiceWorker, iocHighlights } from './support/extensionHarness.js';
 
 const levels = ['clear', 'green', 'amber', 'amber+strict', 'red', ''];
 let server;
@@ -22,7 +22,7 @@ test('TLP remains local across pages, reruns and independent IOCs, with matching
       globalThis.fetch = () => { globalThis.networkCalls++; throw new Error('Unexpected network request'); };
     });
     const page = await openFixturePage(context, server.urlFor('/iocs.html'));
-    await page.locator('.mustela-highlight').first().click();
+    await iocHighlights(page).click();
     const select = page.getByLabel('TLP', { exact: true });
     await expect(select).toBeEnabled();
     await expect(select).toHaveValue('');
@@ -64,15 +64,15 @@ test('TLP remains local across pages, reruns and independent IOCs, with matching
     await expect(select).toHaveValue('red');
     await expect(page.locator('#mustela-analyst-note')).toHaveValue('Keep this local note.');
     await page.locator('#mustela-close').click();
-    await page.locator('.mustela-highlight').nth(1).click();
+    await iocHighlights(page).click(1);
     await expect(select).toHaveValue('');
     await choose(page, 'green');
     const other = await openFixturePage(context, server.urlFor('/other-page.html'));
-    await other.locator('.mustela-highlight').first().click();
+    await iocHighlights(other).click();
     await expect(other.getByLabel('TLP', { exact: true })).toHaveValue('red');
     await choose(other, '');
     await other.locator('#mustela-close').click();
-    await other.locator('.mustela-highlight').first().click();
+    await iocHighlights(other).click();
     await expect(other.getByLabel('TLP', { exact: true })).toHaveValue('');
     expect(JSON.parse(await other.locator('#mustela-copy-export').getAttribute('data-copy-payload')).tlp).toBeNull();
     await expect(select).toHaveValue('green');
@@ -99,7 +99,7 @@ test('loading failures keep sharing disabled; retry treats unknown legacy labels
       };
     });
     const page = await openFixturePage(context, server.urlFor('/iocs.html'));
-    await page.locator('.mustela-highlight').first().click();
+    await iocHighlights(page).click();
     await expect(page.locator('#mustela-tlp-status')).toHaveText('Loading sharing label…');
     for (const id of ['mustela-copy-export', 'mustela-download-export', 'mustela-add-misp', 'mustela-tlp']) {
       await expect(page.locator(`#${id}`)).toBeDisabled();
@@ -122,7 +122,7 @@ test('pending and failed local saves block sharing then retain the last confirme
     const { context } = extension;
     const worker = await getServiceWorker(context);
     const page = await openFixturePage(context, server.urlFor('/iocs.html'));
-    await page.locator('.mustela-highlight').first().click();
+    await iocHighlights(page).click();
     await choose(page, 'amber+strict');
     await worker.evaluate(() => {
       const set = chrome.storage.local.set.bind(chrome.storage.local);
@@ -172,7 +172,7 @@ test('explicit MISP adds carry each confirmed attribute label; failures keep loc
       };
     });
     const page = await openFixturePage(context, server.urlFor('/iocs.html'));
-    await page.locator('.mustela-highlight').first().click();
+    await iocHighlights(page).click();
     await expect(page.getByLabel('TLP', { exact: true })).toBeEnabled();
     await page.locator('#mustela-analyst-note').fill('Keep note on failure.');
     await page.locator('#mustela-analyst-note').blur();
@@ -186,7 +186,7 @@ test('explicit MISP adds carry each confirmed attribute label; failures keep loc
       expect(adds).toHaveLength(count + 1);
       expect(adds.at(-1)).toEqual({ value: '8.8.8.8', type: 'ip-dst', category: 'Network activity', to_ids: true, comment: 'Keep note on failure.', ...(value ? { Tag: [{ name: `tlp:${value}` }] } : {}) });
       await page.locator('#mustela-close').click();
-      await page.locator('.mustela-highlight').first().click();
+      await iocHighlights(page).click();
       await expect(page.getByLabel('TLP', { exact: true })).toBeEnabled();
     }
     await choose(page, 'red');

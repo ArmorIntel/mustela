@@ -1,79 +1,32 @@
-.mustela-highlight {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  cursor: pointer;
-  color: rgba(17, 24, 39, 0.92);
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.62), rgba(255,255,255,0.20)),
-    linear-gradient(135deg, rgba(255,255,255,0.28), rgba(148,163,184,0.10));
-  border: 1px solid rgba(255,255,255,0.45);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.72),
-    inset 0 -18px 30px rgba(255,255,255,0.10),
-    0 12px 30px rgba(15,23,42,0.16),
-    0 1px 0 rgba(255,255,255,0.38);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  transition: box-shadow 180ms ease, background 180ms ease, border-color 180ms ease;
+/* IOC are painted over the page text (CSS Custom Highlight API): no element is
+   inserted, so the site's layout and DOM stay exactly as they were. */
+::highlight(mustela-ioc) {
+  background-color: rgba(56, 189, 248, 0.28);
+  text-decoration: underline 2px rgba(14, 165, 233, 0.95);
+  text-underline-offset: 2px;
 }
 
-.mustela-highlight::before {
-  content: '';
-  position: absolute;
-  inset: 1px;
-  border-radius: inherit;
-  background: linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0.06));
-  opacity: .72;
-  pointer-events: none;
+::highlight(mustela-ioc-hover) {
+  background-color: rgba(56, 189, 248, 0.5);
 }
 
-.mustela-highlight:hover {
-  border-color: rgba(255,255,255,0.62);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.88),
-    inset 0 -18px 32px rgba(255,255,255,0.16),
-    0 18px 42px rgba(15,23,42,0.20),
-    0 0 0 1px rgba(255,255,255,0.24);
+html[data-mustela-ioc-hover],
+html[data-mustela-ioc-hover] * {
+  cursor: pointer !important;
 }
 
-.mustela-label {
-  position: relative;
-  z-index: 1;
-  font-weight: 600;
-}
-
-.mustela-highlight::after {
-  content: attr(data-ioc-type);
-  position: absolute;
-  top: -14px;
-  left: 10px;
-  font-size: 9px;
-  line-height: 1;
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: rgba(17,24,39,0.88);
-  background: rgba(255,255,255,0.68);
-  border: 1px solid rgba(255,255,255,0.55);
-  border-radius: 999px;
-  padding: 3px 6px;
-  box-shadow: 0 8px 24px rgba(15,23,42,0.14);
-  opacity: 0;
-  pointer-events: none;
-  transform: none;
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
+.mustela-ioc-tip {
+  position: fixed;
   z-index: 2147483646;
+  pointer-events: none;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #f8fafc;
+  font: 700 10px/1.4 Inter, system-ui, sans-serif;
+  letter-spacing: .06em;
+  white-space: nowrap;
 }
-
-.mustela-highlight:hover::after {
-  opacity: 1;
-}
-
 
 .mustela-page-indicator {
   position: fixed;

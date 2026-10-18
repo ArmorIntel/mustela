@@ -26,6 +26,17 @@ let scanTimer;
 let activeScan;
 let pendingChanges = false;
 let publishedSignature = '';
+// IOC are painted with the CSS Custom Highlight API: ranges over the site's own
+// text nodes, so frameworks that own the DOM never see a node replaced.
+const HIGHLIGHT_NAME = 'mustela-ioc';
+const HOVER_HIGHLIGHT_NAME = 'mustela-ioc-hover';
+const highlightSupported = typeof Highlight === 'function' && !!globalThis.CSS?.highlights;
+const iocHighlight = highlightSupported ? new Highlight() : null;
+const hoverHighlight = highlightSupported ? new Highlight() : null;
+const marksByNode = new Map();
+let hoveredMark = null;
+let hoverTipEl;
+let hoverFrame = 0;
 
 function applyPauseState(paused) {
   const changed = globallyPaused !== paused;
@@ -53,11 +64,14 @@ function observePage() {
   if (initialized && !globallyPaused) observer?.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
 }
 
-const OWN_UI = '.mustela-panel, .mustela-highlight, .mustela-page-indicator';
-const SKIP_ANCESTORS = `${[...SKIP_TAGS].join(',')}, ${OWN_UI}, [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]`;
+const OWN_UI = '.mustela-panel, .mustela-page-indicator, .mustela-ioc-tip';
+// Editors, live regions and SVG text are rewritten or read aloud by the page:
+// leave them untouched.
+const SKIP_REGIONS = '[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"], svg, [role="textbox"], .cm-editor, .CodeMirror, .monaco-editor, .ace_editor, [aria-live]:not([aria-live="off"])';
+const SKIP_ANCESTORS = `${[...SKIP_TAGS].join(',')}, ${OWN_UI}, ${SKIP_REGIONS}`;
 function skipElement(element) {
   return element && (SKIP_TAGS.has(element.tagName)
-    || element.matches('[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]')
+    || element.matches(SKIP_REGIONS)
     || element.matches(OWN_UI));
 }
 
@@ -79,7 +93,7 @@ function collectMutations(records) {
     if (parent?.closest?.(OWN_UI)) continue;
     if (record.type === 'characterData') {
       processedNodes.delete(record.target);
-      detectedByNode.delete(record.target);
+      forgetNode(record.target);
       if (pendingRoots.size < MAX_SCAN_NODES) pendingRoots.add(record.target);
       changed = true;
     } else {
@@ -218,50 +232,93 @@ function highlightNode(node) {
     confidence: match.confidence,
     sourceContext: { pageUrl: location.href, pageTitle: document.title || '' }
   }));
+  detectedByNode.set(node, detected);
+  // Links keep their own click behaviour: their IOC are detected, not painted.
+  if (!highlightSupported || node.parentElement?.closest('a')) return detected;
 
-  if (node.parentElement?.closest('a')) {
-    detectedByNode.set(node, detected);
-    return detected;
-  }
-
-  const fragment = document.createDocumentFragment();
+  const marks = [];
   let lastIndex = 0;
-
-  for (const match of matches) {
-    if (match.index < lastIndex) continue;
-    fragment.append(text.slice(lastIndex, match.index));
-    const span = document.createElement('span');
-    const ioc = {
-      raw: match.raw,
-      normalized: match.normalized,
-      type: match.type,
-      confidence: match.confidence,
-      sourceContext: { pageUrl: location.href, pageTitle: document.title || '' }
-    };
-    span.className = 'mustela-highlight';
-    span.title = `IOC detected (${match.type}) — click to investigate`;
-    span.dataset.iocType = match.type;
-    span.dataset.ioc = JSON.stringify(ioc);
-    const label = document.createElement('span');
-    label.className = 'mustela-label';
-    label.textContent = match.raw;
-    span.append(label);
-    span.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      openPanel(ioc, true);
-    });
-    fragment.append(span);
+  matches.forEach((match, index) => {
+    if (match.index < lastIndex) return;
+    const range = document.createRange();
+    range.setStart(node, match.index);
+    range.setEnd(node, match.index + match.length);
+    iocHighlight.add(range);
+    marks.push({ range, ioc: detected[index] });
     lastIndex = match.index + match.length;
-  }
-
-  fragment.append(text.slice(lastIndex));
-  const wrapper = document.createElement('span');
-  wrapper.className = 'mustela-fragment';
-  wrapper.append(fragment);
-  node.parentNode.replaceChild(wrapper, node);
-  detectedByNode.set(wrapper, detected);
+  });
+  marksByNode.set(node, marks);
   return detected;
+}
+
+function forgetNode(node) {
+  detectedByNode.delete(node);
+  const marks = marksByNode.get(node);
+  if (!marks) return;
+  marksByNode.delete(node);
+  for (const mark of marks) {
+    iocHighlight.delete(mark.range);
+    if (mark === hoveredMark) setHoveredMark(null);
+  }
+}
+
+// Removing or moving a text node collapses its ranges onto the old parent.
+function marksStale(node) {
+  return marksByNode.get(node)?.some(({ range }) => range.startContainer !== node) || false;
+}
+
+function pruneDisconnected() {
+  for (const node of [...detectedByNode.keys(), ...marksByNode.keys()]) if (!node.isConnected) forgetNode(node);
+}
+
+function markAtPoint(x, y) {
+  if (!marksByNode.size) return null;
+  const caret = document.caretPositionFromPoint?.(x, y);
+  const node = caret ? caret.offsetNode : document.caretRangeFromPoint?.(x, y)?.startContainer;
+  const marks = node && marksByNode.get(node);
+  return marks?.find(({ range }) => [...range.getClientRects()]
+    .some((rect) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom)) || null;
+}
+
+function setHoveredMark(mark) {
+  if (mark === hoveredMark) return;
+  hoveredMark = mark;
+  hoverHighlight?.clear();
+  if (!mark) {
+    delete document.documentElement.dataset.mustelaIocHover;
+    hoverTipEl?.remove();
+    hoverTipEl = null;
+    return;
+  }
+  hoverHighlight.add(mark.range);
+  document.documentElement.dataset.mustelaIocHover = 'true';
+  if (!hoverTipEl) {
+    hoverTipEl = document.createElement('div');
+    hoverTipEl.className = 'mustela-ioc-tip';
+    hoverTipEl.setAttribute('aria-hidden', 'true');
+  }
+  hoverTipEl.textContent = `${String(mark.ioc.type).toUpperCase()} · click to investigate`;
+  const rect = mark.range.getBoundingClientRect();
+  hoverTipEl.style.left = `${Math.max(4, rect.left)}px`;
+  hoverTipEl.style.top = `${rect.top >= 30 ? rect.top - 26 : rect.bottom + 6}px`;
+  // Outside <body>, so the site's own subtree is never touched.
+  if (!hoverTipEl.isConnected) document.documentElement.append(hoverTipEl);
+}
+
+function onPointerMove(event) {
+  if (!marksByNode.size && !hoveredMark) return;
+  const { clientX, clientY } = event;
+  cancelAnimationFrame(hoverFrame);
+  hoverFrame = requestAnimationFrame(() => setHoveredMark(globallyPaused ? null : markAtPoint(clientX, clientY)));
+}
+
+function onDocumentClick(event) {
+  if (globallyPaused || event.button !== 0 || !window.getSelection()?.isCollapsed) return;
+  const mark = markAtPoint(event.clientX, event.clientY);
+  if (!mark) return;
+  event.preventDefault();
+  event.stopPropagation();
+  openPanel(mark.ioc, true);
 }
 
 function updatePageIndicator(count) {
@@ -281,16 +338,9 @@ function updatePageIndicator(count) {
 }
 
 function stripHighlights() {
-  document.querySelectorAll('.mustela-highlight').forEach((el) => {
-    const label = el.querySelector('.mustela-label');
-    const textNode = document.createTextNode(label ? label.textContent : el.textContent);
-    el.replaceWith(textNode);
-  });
-  document.querySelectorAll('.mustela-fragment').forEach((el) => {
-    if (!el.parentNode) return;
-    while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
-    el.remove();
-  });
+  setHoveredMark(null);
+  iocHighlight?.clear();
+  marksByNode.clear();
 }
 
 async function publishDetectedIocs(items) {
@@ -319,7 +369,7 @@ async function scanPage(reset = true) {
   const roots = [...pendingRoots];
   pendingRoots.clear();
   pendingChanges = false;
-  for (const node of detectedByNode.keys()) if (!node.isConnected) detectedByNode.delete(node);
+  pruneDisconnected();
   const work = async () => {
     let visited = 0;
     let sliceStart = Date.now();
@@ -338,14 +388,13 @@ async function scanPage(reset = true) {
         if (generation !== scanGeneration) return [];
         if (node.isConnected === false) break;
         if (node.nodeType === 1 && skipElement(node)) break;
-        if (node.nodeType === 3 && !seen.has(node) && !processedNodes.has(node)) {
+        if (node.nodeType === 3 && !seen.has(node) && (!processedNodes.has(node) || marksStale(node))) {
           seen.add(node);
           processedNodes.add(node);
-          // Snapshot the next node before highlighting detaches this one.
-          const next = walker.nextNode();
-          if (node.nodeValue?.slice(0, MAX_TEXT_LENGTH).trim() && detectedByNode.size < MAX_SCAN_NODES) mutatePage(() => highlightNode(node));
-          node = next;
-        } else node = walker.nextNode();
+          forgetNode(node);
+          if (node.nodeValue?.slice(0, MAX_TEXT_LENGTH).trim() && detectedByNode.size < MAX_SCAN_NODES) highlightNode(node);
+        }
+        node = walker.nextNode();
         visited++;
         if (visited >= MAX_SCAN_NODES) break;
         if (Date.now() - sliceStart >= SCAN_SLICE_MS) {
@@ -356,9 +405,9 @@ async function scanPage(reset = true) {
       if (visited >= MAX_SCAN_NODES) break;
     }
     if (generation !== scanGeneration) return [];
+    pruneDisconnected();
     const unique = new Map();
-    for (const [node, items] of detectedByNode) {
-      if (!node.isConnected) { detectedByNode.delete(node); continue; }
+    for (const items of detectedByNode.values()) {
       for (const ioc of items) unique.set(`${ioc.type}:${ioc.normalized}`, ioc);
     }
     const items = [...unique.values()];
@@ -957,6 +1006,14 @@ async function bootstrap() {
   } catch {}
   await syncPauseState();
   initialized = true;
+  if (highlightSupported) {
+    hoverHighlight.priority = 1;
+    CSS.highlights.set(HIGHLIGHT_NAME, iocHighlight);
+    CSS.highlights.set(HOVER_HIGHLIGHT_NAME, hoverHighlight);
+    document.addEventListener('click', onDocumentClick, true);
+    document.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('scroll', () => setHoveredMark(null), { capture: true, passive: true });
+  }
   observer = new MutationObserver(collectMutations);
   observePage();
   scanPage();

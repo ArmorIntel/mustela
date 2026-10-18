@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startFixtureServer, launchExtensionContext, openFixturePage, openPopup, bindPopupToTab, getServiceWorker } from './support/extensionHarness.js';
+import { startFixtureServer, launchExtensionContext, openFixturePage, openPopup, bindPopupToTab, getServiceWorker, iocHighlights } from './support/extensionHarness.js';
 
 const ip = (normalized) => ({ type: 'ip', normalized });
 const send = (page, type, payload) => page.evaluate(({ type, payload }) => chrome.runtime.sendMessage({ type, payload }), { type, payload });
@@ -34,8 +34,8 @@ for (const options of [{ enabled: true, keys: true }, { enabled: true, keys: fal
       const worker = await instrument(extension.context, options);
       const page = await openFixturePage(extension.context, server.urlFor('/iocs.html'));
       await page.evaluate(() => { const p = document.createElement('p'); p.textContent = 'Internal indicator 10.0.0.1'; document.body.append(p); });
-      const highlight = page.locator('.mustela-highlight').filter({ hasText: '10.0.0.1' });
-      await expect(highlight).toHaveCount(1);
+      const highlight = iocHighlights(page, 'html', '10.0.0.1');
+      await expect.poll(() => highlight.count()).toBe(1);
       await highlight.click();
       const panel = page.locator('.mustela-panel');
       await expect(panel).toContainText('Internal / reserved');

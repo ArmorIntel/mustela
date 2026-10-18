@@ -5,7 +5,8 @@ import {
   openPopup,
   bindPopupToTab,
   openFixturePage,
-  getServiceWorker
+  getServiceWorker,
+  iocHighlights
 } from './support/extensionHarness.js';
 
 test.describe('Chrome extension E2E', () => {
@@ -34,12 +35,13 @@ test.describe('Chrome extension E2E', () => {
       });
       const page = await openFixturePage(context, server.urlFor('/ipv6-iocs.html'));
       const original = 'Before [2001:0DB8:0000:0000:0000:0000:0000:0001], ::ffff:192.0.2.1, ::1 and ::. URL https://[2001:db8::1]/a.';
-      await expect(page.locator('#report .mustela-highlight')).toHaveCount(5);
+      await expect.poll(() => iocHighlights(page, '#report').count()).toBe(5);
       await expect(page.locator('#report')).toHaveText(original);
-      await expect(page.locator('#invalid .mustela-highlight, textarea .mustela-highlight, [contenteditable] .mustela-highlight, #report a')).toHaveCount(0);
+      expect(await iocHighlights(page, '#invalid, textarea, [contenteditable]').count()).toBe(0);
+      await expect(page.locator('#report a')).toHaveCount(0);
       expect(await worker.evaluate(() => ipv6Requests)).toEqual([]);
       expect(external).toEqual([]);
-      await page.locator('#report .mustela-highlight').first().click();
+      await iocHighlights(page, '#report').click();
       await expect(page.locator('.mustela-panel')).toContainText('2001:db8::1');
       await expect(page.locator('.mustela-panel')).toContainText('No decision yet');
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -58,13 +60,13 @@ test.describe('Chrome extension E2E', () => {
       await expect(page).toHaveURL(server.urlFor('/ipv6-iocs.html'));
       popup = await bindPopupToTab(context, await openPopup(context, extensionId), page);
       await popup.locator('#toggleBtn').click();
-      await expect(page.locator('.mustela-highlight')).toHaveCount(0);
+      await expect.poll(() => iocHighlights(page).count()).toBe(0);
       await expect(page.locator('#report')).toHaveText(original);
       await page.reload();
-      await expect(page.locator('.mustela-highlight')).toHaveCount(0);
+      await expect.poll(() => iocHighlights(page).count()).toBe(0);
       await expect(page.locator('#report')).toHaveText(original);
       await popup.locator('#toggleBtn').click();
-      await expect(page.locator('#report .mustela-highlight')).toHaveCount(5);
+      await expect.poll(() => iocHighlights(page, '#report').count()).toBe(5);
     } finally {
       await extension.close();
     }
@@ -77,10 +79,10 @@ test.describe('Chrome extension E2E', () => {
     try {
       const page = await openFixturePage(context, server.urlFor('/iocs.html'));
 
-      await expect(page.locator('.mustela-highlight')).toHaveCount(4);
+      await expect.poll(() => iocHighlights(page).count()).toBe(4);
       await expect(page.locator('.mustela-page-indicator')).toContainText('4');
 
-      await page.locator('.mustela-highlight').nth(1).click();
+      await iocHighlights(page).click(1);
       await expect(page.locator('.mustela-panel')).toBeVisible();
       await expect(page.locator('.mustela-panel')).toContainText('evil.example.org');
       await expect(page.locator('.mustela-panel')).toContainText('Global verdict');
@@ -97,11 +99,11 @@ test.describe('Chrome extension E2E', () => {
       const page = await openFixturePage(context, server.urlFor('/dynamic-iocs.html'));
       const popup = await bindPopupToTab(context, await openPopup(context, extensionId), page);
 
-      await expect(page.locator('.mustela-highlight')).toHaveCount(0);
+      await expect.poll(() => iocHighlights(page).count()).toBe(0);
       await expect(popup.locator('#summaryBadge')).toHaveText('No IOC');
 
       await page.getByRole('button', { name: 'Append dynamic IOC' }).click();
-      await expect(page.locator('.mustela-highlight')).toHaveCount(2);
+      await expect.poll(() => iocHighlights(page).count()).toBe(2);
 
       await popup.reload({ waitUntil: 'domcontentloaded' });
       await expect(popup.locator('#summaryBadge')).toContainText('2 IOC');
@@ -123,17 +125,17 @@ test.describe('Chrome extension E2E', () => {
       const page = await openFixturePage(context, server.urlFor('/iocs.html'));
       const popup = await bindPopupToTab(context, await openPopup(context, extensionId), page);
 
-      await expect(page.locator('.mustela-highlight')).toHaveCount(4);
+      await expect.poll(() => iocHighlights(page).count()).toBe(4);
       await expect(popup.locator('#summaryBadge')).toContainText('4 IOC');
 
       await popup.locator('#toggleBtn').click();
-      await expect(page.locator('.mustela-highlight')).toHaveCount(0);
+      await expect.poll(() => iocHighlights(page).count()).toBe(0);
       await expect(page.locator('.mustela-page-indicator')).toHaveCount(0);
       await expect(popup.locator('#summaryBadge')).toHaveText('Paused');
       await expect(popup.locator('#summaryText')).toContainText('disabled on this page');
 
       await popup.locator('#toggleBtn').click();
-      await expect(page.locator('.mustela-highlight')).toHaveCount(4);
+      await expect.poll(() => iocHighlights(page).count()).toBe(4);
       await expect(popup.locator('#summaryBadge')).toContainText('4 IOC');
 
       await popup.close();
@@ -211,7 +213,7 @@ test.describe('Chrome extension E2E', () => {
       const page = await openFixturePage(context, server.urlFor('/iocs.html'));
       const worker = await getServiceWorker(context);
 
-      await page.locator('.mustela-highlight').first().click();
+      await iocHighlights(page).click();
       await expect(page.locator('.mustela-panel')).toBeVisible();
       await page.locator('#mustela-analyst-note').fill('Escalate to IR if beaconing repeats.');
       await page.locator('#mustela-analyst-note').blur();
@@ -225,7 +227,7 @@ test.describe('Chrome extension E2E', () => {
       expect(Array.isArray(exportPayload.providerResults)).toBeTruthy();
 
       await page.locator('#mustela-close').click();
-      await page.locator('.mustela-highlight').first().click();
+      await iocHighlights(page).click();
       await expect(page.locator('#mustela-analyst-note')).toHaveValue('Escalate to IR if beaconing repeats.');
 
       const storedHistory = await worker.evaluate(async () => (await chrome.storage.local.get('mustela_history')).mustela_history || []);
@@ -268,7 +270,7 @@ test.describe('Chrome extension E2E', () => {
       const popup = await bindPopupToTab(context, await openPopup(context, extensionId), page);
       const worker = await getServiceWorker(context);
 
-      await expect(page.locator('.mustela-highlight')).toHaveCount(4);
+      await expect.poll(() => iocHighlights(page).count()).toBe(4);
       const settingsPagePromise = context.waitForEvent('page');
       await popup.locator('#settingsBtn').click();
       const settingsPage = await settingsPagePromise;
@@ -278,7 +280,7 @@ test.describe('Chrome extension E2E', () => {
       await settingsPage.locator('#highlightEnabled').uncheck();
       await settingsPage.locator('#saveStickyBtn').click();
       await expect(settingsPage.locator('#saveToast')).toContainText('Settings saved locally.');
-      await expect(page.locator('.mustela-highlight')).toHaveCount(0);
+      await expect.poll(() => iocHighlights(page).count()).toBe(0);
       await expect(page.locator('.mustela-page-indicator')).toHaveCount(0);
 
       await bindPopupToTab(context, popup, page);
@@ -286,7 +288,7 @@ test.describe('Chrome extension E2E', () => {
 
       await settingsPage.locator('#highlightEnabled').check();
       await settingsPage.locator('#saveStickyBtn').click();
-      await expect(page.locator('.mustela-highlight')).toHaveCount(4);
+      await expect.poll(() => iocHighlights(page).count()).toBe(4);
 
       await bindPopupToTab(context, popup, page);
       await expect(popup.locator('#summaryBadge')).toContainText('4 IOC');
@@ -307,7 +309,7 @@ test.describe('Chrome extension E2E', () => {
       const page = await openFixturePage(context, server.urlFor('/many-iocs.html'));
       const popup = await bindPopupToTab(context, await openPopup(context, extensionId), page);
 
-      await expect(page.locator('.mustela-highlight')).toHaveCount(7);
+      await expect.poll(() => iocHighlights(page).count()).toBe(7);
       await expect(popup.locator('#summaryBadge')).toContainText('7 IOC');
       await expect(popup.locator('#iocList .ioc-item')).toHaveCount(5);
       await expect(popup.locator('#iocListHint')).toContainText('Showing 5/7');

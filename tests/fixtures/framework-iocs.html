@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Framework-owned DOM fixture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 32px; line-height: 1.5; }
+    td { padding: 2px 8px; }
+  </style>
+</head>
+<body>
+  <h1>Framework-owned DOM fixture</h1>
+  <p id="static">Static indicator: 8.8.8.8 and evil.example.org</p>
+  <table><tbody id="feed"></tbody></table>
+  <svg id="chart" width="320" height="40"><text x="0" y="20">9.9.9.9 in chart</text></svg>
+  <div id="editor" class="cm-editor"><div class="cm-content">fetch("https://evil.example.org/editor")</div></div>
+  <div id="textbox" role="textbox">Draft mentions 1.0.0.1</div>
+  <div id="live" aria-live="polite">Alert stream: 4.4.4.4</div>
+  <script>
+    // Minimal stand-in for a virtual DOM reconciler: it keeps references to the
+    // text nodes it created and later updates, replaces or removes them.
+    const feed = document.getElementById('feed');
+    const rows = [1, 2, 3].map((id) => {
+      const tr = document.createElement('tr');
+      const cell = document.createElement('td');
+      const text = document.createTextNode('');
+      cell.append(text);
+      tr.append(cell);
+      feed.append(tr);
+      return { id, cell, text };
+    });
+    const label = (row, version) => `Source ${row.id} v${version}: 8.8.${row.id}.${version}`;
+    window.frameworkErrors = [];
+    window.frameworkVersion = 0;
+    window.renderFeed = () => {
+      try {
+        const version = ++window.frameworkVersion;
+        for (const row of rows) {
+          row.text.nodeValue = label(row, version);
+          if (version % 2 === 0) {
+            const fresh = document.createTextNode(label(row, version));
+            row.cell.insertBefore(fresh, row.text);
+            row.cell.removeChild(row.text);
+            row.text = fresh;
+          }
+        }
+      } catch (error) {
+        window.frameworkErrors.push(String(error));
+        throw error;
+      }
+    };
+    window.renderFeed();
+    // Snapshot once parsing is complete, before the extension's idle-time scan.
+    document.addEventListener('DOMContentLoaded', () => {
+      window.originalBody = document.body.innerHTML;
+      window.originalTexts = [];
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) window.originalTexts.push(walker.currentNode);
+      window.originalBoxes = [...document.querySelectorAll('h1, p, td, svg, #editor, #textbox, #live')]
+        .map((el) => JSON.stringify(el.getBoundingClientRect()));
+    });
+  </script>
+</body>
+</html>

@@ -35,7 +35,8 @@ test('content script still exposes critical runtime hooks', () => {
   assert.match(content, /detectionMode/);
   assert.match(content, /sendRuntimeMessage/);
   assert.match(content, /publishDetectedIocs/);
-  assert.match(content, /mustela-fragment/);
+  assert.match(content, /CSS\.highlights\.set\(HIGHLIGHT_NAME/);
+  assert.doesNotMatch(content, /replaceChild|mustela-fragment/);
 });
 
 test('content panel keeps links intact and adds copyable non-link values', () => {
