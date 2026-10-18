@@ -3,13 +3,11 @@
   "name": "Mustela",
   "description": "Detect and investigate IOC values from any page.",
   "version": "0.4.0",
-  "permissions": ["storage", "activeTab", "contextMenus", "tabs", "scripting"],
+  "minimum_chrome_version": "105",
+  "permissions": ["storage", "contextMenus", "scripting"],
   "host_permissions": [
     "http://*/*",
-    "https://*/*",
-    "https://www.virustotal.com/*",
-    "https://api.abuseipdb.com/*",
-    "https://api.shodan.io/*"
+    "https://*/*"
   ],
   "background": {
     "service_worker": "src/background/background.js",
