@@ -1,9 +1,11 @@
 # Local exclusion rule API
 
-This is preparatory infrastructure, not a new protection control. There is no
-configuration UI and the new rules are not connected to detection, investigations,
-providers, Analyst Assist, exports or external pivots. Existing exact page pause
-behavior is unchanged. Saving a rule does not currently block outgoing data.
+There is no configuration UI yet. Stored rules guard direct investigations,
+automatic investigation summaries, provider pivots and MISP lookup/add actions.
+They do not filter correlation, copy/export or automatic detection; existing
+exact page pause detection behavior remains unchanged. See
+[Privacy & Transparency](PRIVACY_TRANSPARENCY.md#direct-action-exclusions) for
+the guarded paths and limits.
 
 ## Rules and decisions
 
@@ -75,4 +77,7 @@ their scope.
 remain until removed through `setPageDisabled` or `clearDisabledPages`. The save
 result contains configured rules; read again for the effective union. New rules
 are not written into the old pause list and do not change the existing page pause
-checks. No new rules are exposed to untrusted pages or wired to output guards.
+checks. No new rules are exposed to untrusted pages. The background re-reads the
+effective rules before direct outputs and refuses when either the IOC or any
+available source/tab/frame page matches. Refusals use `MUSTELA_EXCLUDED` with an
+explanation; unreadable rules fail closed with `MUSTELA_EXCLUSION_UNAVAILABLE`.

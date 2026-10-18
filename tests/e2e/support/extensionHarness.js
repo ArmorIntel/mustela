@@ -47,14 +47,33 @@ export async function startFixtureServer() {
   };
 }
 
-export async function launchExtensionContext() {
+export async function launchExtensionContext({ captureContextMenus = false } = {}) {
   const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mustela-extension-e2e-'));
+  let instrumentedPath;
+  if (captureContextMenus) {
+    // Observe the real registered handlers in a disposable extension copy.
+    // Chrome does not expose native context-menu activation to Playwright.
+    instrumentedPath = await fs.mkdtemp(path.join(os.tmpdir(), 'mustela-menu-e2e-'));
+    await fs.cp(extensionPath, instrumentedPath, { recursive: true });
+    const manifest = JSON.parse(await fs.readFile(path.join(instrumentedPath, 'manifest.json'), 'utf8'));
+    const workerPath = path.join(instrumentedPath, manifest.background.service_worker);
+    const source = await fs.readFile(workerPath, 'utf8');
+    await fs.writeFile(workerPath, `
+globalThis.contextMenuHandlers = [];
+const registerContextMenu = chrome.contextMenus.onClicked.addListener.bind(chrome.contextMenus.onClicked);
+chrome.contextMenus.onClicked.addListener = (listener) => {
+  contextMenuHandlers.push(listener);
+  registerContextMenu(listener);
+};
+${source}`);
+  }
+  const loadedExtensionPath = instrumentedPath || extensionPath;
   const launchOptions = {
     headless: false,
     ignoreDefaultArgs: ['--disable-extensions'],
     args: [
-      `--disable-extensions-except=${extensionPath}`,
-      `--load-extension=${extensionPath}`,
+      `--disable-extensions-except=${loadedExtensionPath}`,
+      `--load-extension=${loadedExtensionPath}`,
       '--no-first-run',
       '--no-default-browser-check'
     ]
@@ -81,6 +100,7 @@ export async function launchExtensionContext() {
     async close() {
       await context.close();
       await fs.rm(userDataDir, { recursive: true, force: true });
+      if (instrumentedPath) await fs.rm(instrumentedPath, { recursive: true, force: true });
     }
   };
 }

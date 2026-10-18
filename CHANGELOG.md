@@ -7,7 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
-- Preparatory local exclusion rule API for exact page URLs, normalized exact IOC values and label-boundary host patterns, with validation and non-destructive legacy page pause migration. No configuration UI or output guards are connected yet: saving these new rules does not block outgoing data. No permission or recipient changes.
+- Local exclusion rule API for exact page URLs, normalized exact IOC values and label-boundary host patterns, with validation and non-destructive legacy page pause migration. No configuration UI, permission or recipient changes.
+
+### Security
+- Enforce current local IOC and source-page exclusions before direct investigations (including cache/re-run), automatic summaries, provider pivots and MISP lookup/add, including stale interfaces and context menus. Provider-card actions now use guarded buttons instead of native external links. Removal never replays refused actions; correlation and local copy/export are unchanged. No new permissions or recipients.
 
 ### Fixed
 - Highlight IOC with the CSS Custom Highlight API instead of wrapping page text in elements. Sites that own their DOM (React, Vue, Angular…) no longer crash or show stale values after Mustela runs; pausing, disabling a page or turning highlighting off leaves the page DOM byte-for-byte as it was. Highlights no longer change page layout or add per-IOC blur and shadows; IOC text can now be selected without opening the panel. SVG text, code editors, `role="textbox"` and live regions are no longer scanned. No permission, dependency, or recipient changes.

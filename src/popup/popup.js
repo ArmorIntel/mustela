@@ -576,8 +576,12 @@ function mountManualLookup(tab, onOpened) {
 
   const openExternal = async (provider, ioc) => {
     if (!ioc) return;
-    await send('OPEN_EXTERNAL_PROVIDER', { provider, ioc });
-    window.close();
+    const response = await send('OPEN_EXTERNAL_PROVIDER', {
+      provider, sourceTabId: tab?.id,
+      ioc: { ...ioc, sourceContext: { pageUrl: tab?.url || '', pageTitle: tab?.title || '' } }
+    });
+    if (response?.ok) window.close();
+    else hint.textContent = response?.error || 'External lookup unavailable.';
   };
 
   input.addEventListener('input', () => {
