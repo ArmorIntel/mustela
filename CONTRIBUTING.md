@@ -69,6 +69,37 @@ npm test
 Commit both files together. Running build alone only repairs the working tree, not
 the index, so the freshness check will still fail until the correct runtime is staged.
 
+## Performance
+
+Run `npm run bench` with Node (no additional dependencies). Every PR touching the
+scan or parser must attach its bench output to the PR description. Timings describe
+this machine, not a browser latency guarantee.
+
+`npm test` uses the same synthetic fixtures and measurement helpers:
+
+- Parser: dense 200,000-character log, no-IOC text, repeated `a.` / `1.` tokens,
+  and minified JSON. Input grows from 12,500 to 200,000 characters (16×).
+  The median per-call cost may grow at most 48×: linear growth × a 3× CI margin.
+  Both sizes are warmed, short calls are batched above clock noise, and seven
+  alternating samples are taken. There is no absolute millisecond pass/fail limit.
+  Quadratic work (approximately 256×) must fail with `Performance budget exceeded`.
+- Scan: a 20,000-text-node no-IOC page must visit/parse at most 1,500 nodes per
+  scan, pass at most 8,192 characters per text node to the parser, retain no IOC,
+  and publish the unchanged empty result only once across two scans. Node uses
+  a minimal DOM adapter and the shipped scan; real DOM behavior, yielding and
+  idle/live-stream behavior remain covered by the scanning E2E suite.
+- Storage: 16 identical 500-IOC lists produce one session write and zero local
+  (disk-backed) writes, while preserving all restored indicators.
+- Popup: the history summary reads at most eight recent entries and displays
+  at most five, independently of total history size (1,250 versus 20,000).
+
+Scan/storage/popup use deterministic work counts rather than scheduler-sensitive
+wall time. Bench also prints their durations for diagnosis. These checks do not
+measure browser heap usage, layout or popup paint latency; use E2E for those flows.
+When changing budgets, justify the workload and complexity bound rather than
+raising a threshold until a regression passes. Validate timing stability with ten
+consecutive `npm test` runs on the supported Node versions (including CI Node 20).
+
 ## Code style
 
 There is no linter today. Match the existing style:

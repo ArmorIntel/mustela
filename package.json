@@ -30,6 +30,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
+    "bench": "node scripts/bench.mjs",
     "store:assets": "npm run build && xvfb-run -a node scripts/generate-store-assets.mjs",
     "test": "node --test",
     "test:e2e": "npm run build && playwright test",
