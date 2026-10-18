@@ -1,4 +1,7 @@
 import { normalizeTlp, validateTlp } from '../shared/tlp.js';
+import { normalizeExclusionRules } from '../shared/exclusions.js';
+
+const EXCLUSIONS_KEY = 'mustela_exclusions';
 
 const SETTINGS_KEY = 'mustela_settings';
 const HISTORY_KEY = 'mustela_history';
@@ -368,6 +371,47 @@ export function clearDetectedForTab(tabId) {
 
 export async function removeLegacyDetected() {
   await getStorageArea().remove(DETECTED_KEY);
+}
+
+// Serialize initialization and replacement so a first read cannot erase a save.
+let exclusionsWrite = Promise.resolve();
+function withExclusionRules(operation) {
+  const result = exclusionsWrite.then(operation);
+  exclusionsWrite = result.catch(() => undefined);
+  return result;
+}
+
+function readExclusionRecord(record) {
+  if (record === undefined) return [];
+  if (record?.version !== 1) throw new Error('Unsupported exclusion rules version.');
+  return normalizeExclusionRules(record.rules);
+}
+
+export function getExclusionRules() {
+  return withExclusionRules(async () => {
+    const data = await getStorageArea().get([EXCLUSIONS_KEY, DISABLED_PAGES_KEY]);
+    const rules = readExclusionRecord(data[EXCLUSIONS_KEY]);
+    if (data[EXCLUSIONS_KEY] === undefined) {
+      await getStorageArea().set({ [EXCLUSIONS_KEY]: { version: 1, rules } });
+    }
+    // Non-destructive migration: legacy pauses retain their original key and
+    // byte-exact identity. Project them rather than copying them, so unpausing
+    // through the existing API cannot leave a stale migrated exclusion behind.
+    const legacy = (data[DISABLED_PAGES_KEY] || []).map((value) => ({ kind: 'page-url', value }));
+    return [...new Map([...rules, ...legacy].map((rule) => [JSON.stringify(rule), rule])).values()];
+  });
+}
+
+// Replaces configured rules only. Legacy page pauses remain independently
+// managed by setPageDisabled/clearDisabledPages, and are included on every read.
+export function saveExclusionRules(rules) {
+  return withExclusionRules(async () => {
+    const normalized = normalizeExclusionRules(rules);
+    const data = await getStorageArea().get(EXCLUSIONS_KEY);
+    readExclusionRecord(data[EXCLUSIONS_KEY]);
+    await getStorageArea().set({ [EXCLUSIONS_KEY]: { version: 1, rules: normalized } });
+    return normalized;
+  });
 }
 
 export async function getDisabledPages() {
