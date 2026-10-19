@@ -50,6 +50,8 @@ npm run verify          # build + npm test + xvfb e2e
 
 PRs are expected to pass `npm test`. E2E coverage is encouraged for changes that affect the end-to-end analyst flow.
 
+When testing external provider pivots, observe `chrome.tabs.onCreated` before clicking and assert the new tab's `pendingUrl` (or committed `url`), then remove the tab by ID. Keep the real extension message and tab creation paths. A newly created tab's Playwright `page` event can wait for the initial navigation response; provider latency, outages or WAF challenges must not determine whether a pivot test passes.
+
 ### Generated IOC runtime
 
 `npm test` regenerates the expected IOC runtime in memory and compares its exact bytes

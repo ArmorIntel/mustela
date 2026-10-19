@@ -339,6 +339,20 @@ test.describe('Chrome extension E2E', () => {
     const { context, extensionId } = extension;
 
     try {
+      // A tab exists before Playwright emits its page event: initial provider
+      // navigation may still be waiting on the network. Observe Chrome directly.
+      const worker = await getServiceWorker(context);
+      await worker.evaluate(() => {
+        globalThis.pivotTabs = [];
+        chrome.tabs.onCreated.addListener((tab) => pivotTabs.push({
+          id: tab.id, url: tab.pendingUrl || tab.url
+        }));
+      });
+      const expectProviderTab = async (url) => {
+        await expect.poll(() => worker.evaluate((url) => pivotTabs.find((tab) => tab.url === url), url)).toBeTruthy();
+        const tab = await worker.evaluate((url) => pivotTabs.find((tab) => tab.url === url), url);
+        await worker.evaluate((id) => chrome.tabs.remove(id), tab.id);
+      };
       const page = await openFixturePage(context, server.urlFor('/iocs.html'));
       const popup = await bindPopupToTab(context, await openPopup(context, extensionId), page);
 
@@ -348,12 +362,8 @@ test.describe('Chrome extension E2E', () => {
       await expect(popup.locator('#manualAbuseBtn')).toBeEnabled();
       await expect(popup.locator('#manualShodanBtn')).toBeDisabled();
 
-      const abusePagePromise = context.waitForEvent('page');
       await popup.locator('#manualAbuseBtn').click();
-      const abusePage = await abusePagePromise;
-      await abusePage.waitForLoadState('domcontentloaded');
-      await expect(abusePage).toHaveURL(/https:\/\/www\.abuseipdb\.com\/check-block\/10\.0\.0\.0%2F24/);
-      await abusePage.close();
+      await expectProviderTab('https://www.abuseipdb.com/check-block/10.0.0.0%2F24');
 
       const popupAsn = await bindPopupToTab(context, await openPopup(context, extensionId), page);
       await popupAsn.locator('#manualInput').fill('AS13335');
@@ -362,12 +372,8 @@ test.describe('Chrome extension E2E', () => {
       await expect(popupAsn.locator('#manualAbuseBtn')).toBeDisabled();
       await expect(popupAsn.locator('#manualShodanBtn')).toBeEnabled();
 
-      const shodanPagePromise = context.waitForEvent('page');
       await popupAsn.locator('#manualShodanBtn').click();
-      const shodanPage = await shodanPagePromise;
-      await shodanPage.waitForLoadState('domcontentloaded');
-      await expect(shodanPage).toHaveURL(/https:\/\/www\.shodan\.io\/search\?query=AS13335/);
-      await shodanPage.close();
+      await expectProviderTab('https://www.shodan.io/search?query=AS13335');
       await popupAsn.close();
       await popup.close();
     } finally {
