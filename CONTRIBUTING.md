@@ -85,15 +85,27 @@ this machine, not a browser latency guarantee.
   Both sizes are warmed, short calls are batched above clock noise, and seven
   alternating samples are taken. There is no absolute millisecond pass/fail limit.
   Quadratic work (approximately 256×) must fail with `Performance budget exceeded`.
-- Scan: a 20,000-text-node no-IOC page must visit/parse at most 1,500 nodes per
-  scan, pass at most 8,192 characters per text node to the parser, retain no IOC,
-  and publish the unchanged empty result only once across two scans. Node uses
-  a minimal DOM adapter and the shipped scan; real DOM behavior, yielding and
-  idle/live-stream behavior remain covered by the scanning E2E suite.
+- Scan: a 20,000-text-node no-IOC page must parse every eligible node with linear
+  traversal work, pass at most 8,192 characters per text node to the parser, retain
+  no IOC, and publish the unchanged empty result only once across two scans.
+  An injected clock verifies that work yields at the 8 ms slice budget without a
+  wall-time threshold; a final-node IOC fixture prevents truncated coverage.
+  Node uses a minimal DOM adapter; real subtree pruning, CSS ranges, delegated
+  clicks, cancellation and incremental/live-stream behavior are covered by E2E.
 - Storage: 16 identical 500-IOC lists produce one session write and zero local
   (disk-backed) writes, while preserving all restored indicators.
 - Popup: the history summary reads at most eight recent entries and displays
   at most five, independently of total history size (1,250 versus 20,000).
+
+The content scanner covers the entire eligible DOM in time-budgeted slices. It
+retains at most 1,500 IOC occurrences (including repeated identities) and CSS
+ranges per page, publishing at most that many unique IOC; later occurrences are
+not retained once the limit is reached. Empty text and excluded subtrees do not
+consume this budget. Only the first 8,192 characters of each text node are parsed.
+The incremental queue holds at most 1,500 roots; overflow collapses to a body scan
+instead of losing additions. Overlapping roots are deduplicated within a batch;
+no-IOC text nodes are not retained between batches. A body fallback can therefore
+reparse unchanged no-IOC text, while ordinary additions only scan their roots.
 
 Scan/storage/popup use deterministic work counts rather than scheduler-sensitive
 wall time. Bench also prints their durations for diagnosis. These checks do not

@@ -39,7 +39,10 @@ let globallyPaused = true; // Fail closed until the background confirms initiali
 let initialized = false;
 let pauseRevision = 0;
 let panelGeneration = 0;
-const MAX_SCAN_NODES = 1500;
+// Bound retained ranges and published IOC independently of page length.
+const MAX_RETAINED_IOCS = 1500;
+const MAX_PENDING_ROOTS = 1500;
+let retainedIocCount = 0;
 const MAX_TEXT_LENGTH = 8192;
 const SCAN_SLICE_MS = 8;
 const pendingRoots = new Set();
@@ -150,7 +153,17 @@ function cancelScan() {
   pendingRoots.clear();
   pendingChanges = false;
   detectedByNode.clear();
+  retainedIocCount = 0;
   processedNodes = new WeakSet();
+}
+
+function queueRoot(node) {
+  if (pendingRoots.has(document.body)) return;
+  if (pendingRoots.size >= MAX_PENDING_ROOTS) {
+    // A burst must not silently discard nodes beyond the queue limit.
+    pendingRoots.clear();
+    pendingRoots.add(document.body);
+  } else pendingRoots.add(node);
 }
 
 function collectMutations(records) {
@@ -163,13 +176,13 @@ function collectMutations(records) {
     if (record.type === 'characterData') {
       processedNodes.delete(record.target);
       forgetNode(record.target);
-      if (pendingRoots.size < MAX_SCAN_NODES) pendingRoots.add(record.target);
+      queueRoot(record.target);
       changed = true;
     } else {
       for (const node of record.addedNodes) {
         if (node.nodeType !== 1 && node.nodeType !== 3) continue;
         if (node.nodeType === 1 && node.matches(OWN_UI)) continue;
-        if (pendingRoots.size < MAX_SCAN_NODES) pendingRoots.add(node);
+        queueRoot(node);
         changed = true;
       }
       if ([...record.removedNodes].some((node) => node.nodeType !== 1 || !node.matches(OWN_UI))) changed = true;
@@ -296,11 +309,12 @@ function downloadTextFile(filename, content, mimeType = 'application/json') {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-function highlightNode(node) {
+function highlightNode(node, sourceContext) {
   if (!highlightEnabled) return [];
   const text = node.nodeValue;
   const matches = parseIocsFromText(text.slice(0, MAX_TEXT_LENGTH), { mode: detectionMode })
-    .filter((ioc) => !isExcluded(exclusionRules, { pageUrl: location.href, ioc }));
+    .filter((ioc) => !isExcluded(exclusionRules, { pageUrl: sourceContext.pageUrl, ioc }))
+    .slice(0, MAX_RETAINED_IOCS - retainedIocCount);
   if (!matches.length) return [];
 
   const detected = matches.map((match) => ({
@@ -308,9 +322,10 @@ function highlightNode(node) {
     normalized: match.normalized,
     type: match.type,
     confidence: match.confidence,
-    sourceContext: { pageUrl: location.href, pageTitle: document.title || '' }
+    sourceContext
   }));
   detectedByNode.set(node, detected);
+  retainedIocCount += detected.length;
   // Links keep their own click behaviour: their IOC are detected, not painted.
   if (!highlightSupported || node.parentElement?.closest('a')) return detected;
 
@@ -330,6 +345,7 @@ function highlightNode(node) {
 }
 
 function forgetNode(node) {
+  retainedIocCount -= detectedByNode.get(node)?.length || 0;
   detectedByNode.delete(node);
   const marks = marksByNode.get(node);
   if (!marks) return;
@@ -453,12 +469,12 @@ async function scanPage(reset = true) {
   pendingChanges = false;
   pruneDisconnected();
   const work = async () => {
-    let visited = 0;
     let sliceStart = Date.now();
-    const seen = new WeakSet();
+    const sourceContext = { pageUrl: location.href, pageTitle: document.title || '' };
     for (const root of roots) {
       if (!root || root.isConnected === false) continue;
       if (root.parentElement?.closest(SKIP_ANCESTORS)) continue;
+      if (root.nodeType === 1 && skipElement(root)) continue;
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
         acceptNode(node) {
           if (node.nodeType === 1 && skipElement(node)) return NodeFilter.FILTER_REJECT;
@@ -469,26 +485,25 @@ async function scanPage(reset = true) {
       while (node) {
         if (generation !== scanGeneration) return [];
         if (node.isConnected === false) break;
-        if (node.nodeType === 1 && skipElement(node)) break;
-        if (node.nodeType === 3 && !seen.has(node) && (!processedNodes.has(node) || marksStale(node))) {
-          seen.add(node);
+        if (node.nodeType === 3 && (!processedNodes.has(node) || marksStale(node))) {
           processedNodes.add(node);
           forgetNode(node);
-          if (node.nodeValue?.slice(0, MAX_TEXT_LENGTH).trim() && detectedByNode.size < MAX_SCAN_NODES) highlightNode(node);
+          if (retainedIocCount < MAX_RETAINED_IOCS && node.nodeValue?.slice(0, MAX_TEXT_LENGTH).trim()) highlightNode(node, sourceContext);
         }
         node = walker.nextNode();
-        visited++;
-        if (visited >= MAX_SCAN_NODES) break;
         if (Date.now() - sliceStart >= SCAN_SLICE_MS) {
           await new Promise((resolve) => setTimeout(resolve, 0));
           if (!isActive()) return [];
           sliceStart = Date.now();
         }
       }
-      if (visited >= MAX_SCAN_NODES) break;
     }
     if (generation !== scanGeneration) return [];
     pruneDisconnected();
+    // Deduplicate overlapping roots within this batch, but do not retain a
+    // page-sized WeakSet of no-IOC text wrappers between incremental scans.
+    // Keep detected nodes so moves can reuse valid ranges (or rebuild stale ones).
+    processedNodes = new WeakSet(detectedByNode.keys());
     const unique = new Map();
     for (const items of detectedByNode.values()) {
       for (const ioc of items) unique.set(`${ioc.type}:${ioc.normalized}`, ioc);
