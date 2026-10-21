@@ -11,7 +11,35 @@ const { IOC_TYPES, parseIocsFromText, detectSingleIoc, isProtectedIoc, isExclude
 const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'OPTGROUP']);
 
 let observer;
+// Replaced with the stylesheet text by scripts/build.mjs, inside this IIFE.
+const UI_STYLES = /* MUSTELA_UI_STYLES */ "";
+let uiHost;
+let uiRoot;
+let previousFocus;
 let panelEl;
+
+function ensureUiRoot() {
+  if (!uiRoot) {
+    uiHost = document.createElement('div');
+    // Inline important rules protect the boundary even against page resets.
+    const boundary = { all: 'initial', position: 'fixed', display: 'block',
+      top: '0', left: '0', width: '0', height: '0', overflow: 'visible',
+      'z-index': '2147483647', 'pointer-events': 'none', direction: 'ltr' };
+    for (const [name, value] of Object.entries(boundary)) uiHost.style.setProperty(name, value, 'important');
+    uiRoot = uiHost.attachShadow({ mode: 'closed' });
+    const style = document.createElement('style');
+    style.textContent = UI_STYLES;
+    uiRoot.append(style);
+    // Keep routine UI events inside the component. Closed shadow DOM is DOM
+    // encapsulation, not a security boundary against a hostile page (capture
+    // listeners can still observe composed keyboard/pointer events).
+    for (const type of ['click', 'input', 'beforeinput', 'change', 'keydown', 'keyup', 'pointerdown', 'pointerup']) {
+      uiRoot.addEventListener(type, (event) => event.stopPropagation());
+    }
+  }
+  if (!uiHost.isConnected) document.documentElement.append(uiHost);
+  return uiRoot;
+}
 let pageIndicatorEl;
 let lastDetectedIocs = [];
 let extensionDisabled = false;
@@ -93,6 +121,9 @@ function dispose() {
   pageIndicatorEl = null;
   hoverTipEl?.remove();
   hoverTipEl = null;
+  uiHost?.remove();
+  uiHost = null;
+  uiRoot = null;
   document.removeEventListener?.('click', onDocumentClick, true);
   document.removeEventListener?.('pointermove', onPointerMove);
   document.removeEventListener?.('mustela:context-check', onContextCheck);
@@ -141,7 +172,7 @@ const OWN_UI = '.mustela-panel, .mustela-page-indicator, .mustela-ioc-tip';
 const SKIP_REGIONS = '[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"], svg, [role="textbox"], .cm-editor, .CodeMirror, .monaco-editor, .ace_editor, [aria-live]:not([aria-live="off"])';
 const SKIP_ANCESTORS = `${[...SKIP_TAGS].join(',')}, ${OWN_UI}, ${SKIP_REGIONS}`;
 function skipElement(element) {
-  return element && (SKIP_TAGS.has(element.tagName)
+  return element && (element === uiHost || SKIP_TAGS.has(element.tagName)
     || element.matches(SKIP_REGIONS)
     || element.matches(OWN_UI));
 }
@@ -172,7 +203,7 @@ function collectMutations(records) {
   let changed = false;
   for (const record of records) {
     const parent = record.target.nodeType === 3 ? record.target.parentElement : record.target;
-    if (parent?.closest?.(OWN_UI)) continue;
+    if (parent === uiHost || parent?.closest?.(OWN_UI)) continue;
     if (record.type === 'characterData') {
       processedNodes.delete(record.target);
       forgetNode(record.target);
@@ -181,11 +212,11 @@ function collectMutations(records) {
     } else {
       for (const node of record.addedNodes) {
         if (node.nodeType !== 1 && node.nodeType !== 3) continue;
-        if (node.nodeType === 1 && node.matches(OWN_UI)) continue;
+        if (node.nodeType === 1 && (node === uiHost || node.matches(OWN_UI))) continue;
         queueRoot(node);
         changed = true;
       }
-      if ([...record.removedNodes].some((node) => node.nodeType !== 1 || !node.matches(OWN_UI))) changed = true;
+      if ([...record.removedNodes].some((node) => node.nodeType !== 1 || !(node === uiHost || node.matches(OWN_UI)))) changed = true;
     }
   }
   // A trailing-only debounce starves on live feeds. Keep one deadline from
@@ -396,18 +427,20 @@ function setHoveredMark(mark) {
   hoverTipEl.style.left = `${Math.max(4, rect.left)}px`;
   hoverTipEl.style.top = `${rect.top >= 30 ? rect.top - 26 : rect.bottom + 6}px`;
   // Outside <body>, so the site's own subtree is never touched.
-  if (!hoverTipEl.isConnected) document.documentElement.append(hoverTipEl);
+  if (!hoverTipEl.isConnected) ensureUiRoot().append(hoverTipEl);
 }
 
 function onPointerMove(event) {
   if (!isActive()) return;
   if (!marksByNode.size && !hoveredMark) return;
+  if (event.target === uiHost) { setHoveredMark(null); return; }
   const { clientX, clientY } = event;
   cancelAnimationFrame(hoverFrame);
   hoverFrame = requestAnimationFrame(() => setHoveredMark(globallyPaused ? null : markAtPoint(clientX, clientY)));
 }
 
 function onDocumentClick(event) {
+  if (event.target === uiHost) return;
   if (!isActive()) return;
   if (globallyPaused || event.button !== 0 || !window.getSelection()?.isCollapsed) return;
   const mark = markAtPoint(event.clientX, event.clientY);
@@ -426,7 +459,7 @@ function updatePageIndicator(count) {
   if (!pageIndicatorEl?.isConnected) {
     pageIndicatorEl = document.createElement('div');
     pageIndicatorEl.className = 'mustela-page-indicator';
-    document.body.appendChild(pageIndicatorEl);
+    ensureUiRoot().append(pageIndicatorEl);
   }
   if (pageIndicatorEl.dataset.count === String(count)) return;
   pageIndicatorEl.dataset.count = String(count);
@@ -566,9 +599,13 @@ function detectBackdropTone() {
 }
 
 function renderPanelSkeleton(ioc) {
+  const focusTarget = panelEl ? previousFocus : document.activeElement;
   closePanel();
+  previousFocus = focusTarget;
   panelEl = document.createElement('div');
   const tone = detectBackdropTone();
+  panelEl.setAttribute('role', 'dialog');
+  panelEl.setAttribute('aria-label', 'Mustela investigation');
   panelEl.className = `mustela-panel ${tone === 'light' ? 'mustela-panel--light' : ''}`.trim();
   panelEl.innerHTML = `
     <header>
@@ -584,9 +621,13 @@ function renderPanelSkeleton(ioc) {
       <div id="mustela-result" style="margin-top:12px;">Loading…</div>
     </div>
   `;
-  document.body.appendChild(panelEl);
+  ensureUiRoot().append(panelEl);
+  panelEl.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); closePanel(); }
+  });
   panelEl.querySelector('#mustela-close').addEventListener('click', closePanel);
   bindCopyables(panelEl);
+  panelEl.querySelector('#mustela-close').focus();
 }
 
 function renderEmptyState() {
@@ -1048,6 +1089,8 @@ function closePanel() {
   panelGeneration++;
   if (panelEl) panelEl.remove();
   panelEl = null;
+  if (previousFocus?.isConnected) previousFocus.focus?.({ preventScroll: true });
+  previousFocus = null;
 }
 
 function escapeHtml(value) {

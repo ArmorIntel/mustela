@@ -63,7 +63,7 @@ export async function measureScan(count, { lastIoc = false, dense = false } = {}
       return parseIocsFromText(text);
     } },
     NodeFilter: { SHOW_ELEMENT: 1, SHOW_TEXT: 4 },
-    document: { body, get title() { metrics.contextReads++; return 'Synthetic report'; }, createElement: () => ({ dataset: {}, isConnected: true }), documentElement: { dataset: {} }, createTreeWalker() {
+    document: { body, get title() { metrics.contextReads++; return 'Synthetic report'; }, createElement: () => ({ dataset: {}, isConnected: true, style: { setProperty() {} }, attachShadow: () => ({ append() {}, addEventListener() {} }) }), documentElement: { dataset: {} }, createTreeWalker() {
       let index = 0;
       return { nextNode() { metrics.visited++; sliceWork++; return nodes[index++] || null; } };
     } },
