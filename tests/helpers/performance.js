@@ -40,33 +40,45 @@ export function assertGrowthBudget(name, { small, large, scale }) {
 }
 
 const content = await fs.readFile(new URL('../../src/content/content.js', import.meta.url), 'utf8');
-export async function measureScan(count) {
+export async function measureScan(count, { lastIoc = false, dense = false } = {}) {
   const nodes = makePageNodes(count);
-  const metrics = { visited: 0, parsed: 0, maxText: 0, messages: 0 };
-  const body = { nodeType: 1, tagName: 'BODY', matches: () => false, isConnected: true };
+  if (lastIoc) nodes.at(-1).nodeValue = '8.8.8.8';
+  if (dense) for (const node of nodes) node.nodeValue = '8.8.8.8 9.9.9.9';
+  let clock = 0;
+  let sliceWork = 0;
+  let published = [];
+  const metrics = { visited: 0, parsed: 0, maxText: 0, messages: 0, yields: 0, maxSliceWork: 0, contextReads: 0 };
+  const body = { nodeType: 1, tagName: 'BODY', matches: () => false, isConnected: true, appendChild() {} };
   const context = vm.createContext({
-    setTimeout, clearTimeout, crypto: { getRandomValues: (bytes) => bytes.fill(1) },
+    Date: { now: () => clock++ },
+    setTimeout(fn) {
+      metrics.maxSliceWork = Math.max(metrics.maxSliceWork, sliceWork);
+      sliceWork = 0;
+      metrics.yields++;
+      return setTimeout(fn, 0);
+    }, clearTimeout, crypto: { getRandomValues: (bytes) => bytes.fill(1) },
     location: { href: 'https://report.example/' },
-    MUSTELA_SHARED: { parseIocsFromText(text) {
+    MUSTELA_SHARED: { isExcluded: () => false, parseIocsFromText(text) {
       metrics.parsed++; metrics.maxText = Math.max(metrics.maxText, text.length);
       return parseIocsFromText(text);
     } },
     NodeFilter: { SHOW_ELEMENT: 1, SHOW_TEXT: 4 },
-    document: { body, documentElement: { dataset: {} }, createTreeWalker() {
+    document: { body, get title() { metrics.contextReads++; return 'Synthetic report'; }, createElement: () => ({ dataset: {}, isConnected: true }), documentElement: { dataset: {} }, createTreeWalker() {
       let index = 0;
-      return { nextNode() { metrics.visited++; return nodes[index++] || null; } };
+      return { nextNode() { metrics.visited++; sliceWork++; return nodes[index++] || null; } };
     } },
-    chrome: { runtime: { id: 'fixture', onMessage: { addListener() {} }, async sendMessage() { metrics.messages++; return { ok: true }; } } }
+    chrome: { runtime: { id: 'fixture', onMessage: { addListener() {} }, async sendMessage(message) { metrics.messages++; published = message.payload; return { ok: true }; } } }
   });
   // Skip event wiring only: the actual shipped scan/parser/publisher run unchanged.
   vm.runInContext(content.replace('bootstrap();', `initialized = true; globallyPaused = false;
-    globalThis.benchScan = scanPage; globalThis.retained = () => detectedByNode.size;`), context);
+    globalThis.benchScan = scanPage; globalThis.retained = () => [...detectedByNode.values()].reduce((n, items) => n + items.length, 0);
+    globalThis.contextCount = () => new Set([...detectedByNode.values()].flat().map(ioc => ioc.sourceContext)).size;`), context);
   const start = performance.now();
   await context.benchScan();
   const duration = performance.now() - start;
   const first = { ...metrics };
   await context.benchScan();
-  return { ...first, messages: metrics.messages, retained: context.retained(), duration };
+  return { ...first, messages: metrics.messages, retained: context.retained(), contexts: context.contextCount(), published, duration };
 }
 
 export async function measureStorage() {

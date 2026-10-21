@@ -7,8 +7,8 @@ const content = await fs.readFile(new URL('../../src/content/content.js', import
 
 // Run the shipped content scripts in a real browser DOM with a counted local
 // transport. The extension E2E suite separately covers Chrome message delivery.
-async function fixture(page) {
-  await page.setContent('<html><body><main><p>8.8.8.8 evil.example.org</p></main></body></html>');
+async function fixture(page, html = '<main><p>8.8.8.8 evil.example.org</p></main>') {
+  await page.setContent(`<html><body>${html}</body></html>`);
   await page.evaluate(() => {
     window.metrics = { scans: [], parsed: [], messages: [] };
     window.chrome = { runtime: {
@@ -105,7 +105,7 @@ test('live stream scans only additions in bounded batches', async ({ page }) => 
   expect(Math.max(...result.scans.map((scan) => scan.nodes))).toBeLessThanOrEqual(15);
 });
 
-test('scan bounds text and traversal, yields to page tasks, and forgets removed IOC', async ({ page }) => {
+test('scan bounds text, covers every queued root, yields and forgets removed IOC', async ({ page }) => {
   await fixture(page);
   await page.evaluate(() => {
     window.parseDelay = 2;
@@ -117,12 +117,12 @@ test('scan bounds text and traversal, yields to page tasks, and forgets removed 
     }
     document.querySelector('main').append(fragment);
   });
-  await expect.poll(() => page.evaluate(() => metrics.scans.length)).toBe(2);
+  await expect.poll(() => page.evaluate(() => metrics.scans.length), { timeout: 15000 }).toBe(2);
   const result = await page.evaluate(() => ({ count: metrics.parsed.length, longest: Math.max(...metrics.parsed.map((text) => text.length)), parsedAtYield, ...scanState() }));
-  expect(result.retained).toBeLessThanOrEqual(1500);
-  expect(result.queued).toBeLessThanOrEqual(1500);
+  expect(result.retained).toBe(1);
+  expect(result.queued).toBe(0);
   expect(result.longest).toBeLessThanOrEqual(8192);
-  expect(result.count).toBeLessThanOrEqual(1501);
+  expect(result.count).toBe(2001);
   expect(result.parsedAtYield).toBeLessThan(result.count);
   await page.evaluate(() => { window.parseDelay = 0; document.querySelector('main').replaceChildren(); });
   await expect(page.locator('.mustela-page-indicator')).toHaveCount(0);
@@ -184,4 +184,49 @@ test('character changes in links are incremental and unchanged IOC never republi
   await page.evaluate(() => { document.querySelector('a').firstChild.nodeValue = 'same IOC: 1.1.1.1'; });
   await expect.poll(() => page.evaluate(() => metrics.scans.length)).toBe(4);
   expect(await page.evaluate(() => metrics.messages.length)).toBe(3);
+});
+
+test('initial scan covers 20,000 text nodes including the last IOC', async ({ page }) => {
+  const rows = Array.from({ length: 20000 }, (_, i) => `<p>${i === 19999 ? '8.8.8.8' : `plain event ${i}`}</p>`).join('');
+  await fixture(page, `<main>${rows}</main>`);
+  expect(await page.evaluate(() => metrics.parsed.length)).toBe(20000);
+  expect(await page.evaluate(() => metrics.messages.at(-1).map((ioc) => ioc.normalized))).toEqual(['8.8.8.8']);
+  expect(await iocHighlights(page).texts()).toEqual(['8.8.8.8']);
+});
+
+test('excluded subtrees are pruned and delegated click resolves one of 200 IOC', async ({ page }) => {
+  const excluded = ['script', 'style', 'textarea', 'select', 'div contenteditable="true"',
+    'div contenteditable=""', 'div contenteditable="plaintext-only"', 'svg', 'div role="textbox"',
+    'div class="cm-editor"', 'div class="CodeMirror"', 'div class="monaco-editor"',
+    'div class="ace_editor"', 'div aria-live="polite"', 'div class="mustela-panel"'];
+  const skipped = excluded.map((tag) => `<${tag}>9.9.9.9</${tag.split(' ')[0]}>`).join('');
+  const rows = Array.from({ length: 200 }, (_, i) => `<p>198.51.100.${i + 1}</p>`).join('');
+  await fixture(page, `<main>${skipped}<section>${rows}</section></main>`);
+  expect(await page.evaluate(() => metrics.parsed.length)).toBe(200);
+  expect(await iocHighlights(page, 'section').count()).toBe(200);
+  await iocHighlights(page, 'section', '198.51.100.173').click();
+  await expect(page.locator('.mustela-panel .mustela-ioc-value')).toHaveText('198.51.100.173');
+  expect(await page.locator('section [data-ioc], section span').count()).toBe(0);
+});
+
+test('retained range budget is global and removal frees it for new IOC', async ({ page }) => {
+  const rows = Array.from({ length: 800 }, () => '<p>8.8.8.8 9.9.9.9</p>').join('');
+  await fixture(page, `<main>${rows}</main>`);
+  expect(await iocHighlights(page).count()).toBe(1500);
+  await page.evaluate(() => { document.querySelector('main').replaceChildren(); });
+  await expect.poll(() => iocHighlights(page).count()).toBe(0);
+  await page.evaluate(() => { const p = document.createElement('p'); p.textContent = '1.1.1.1'; document.querySelector('main').append(p); });
+  await expect.poll(() => iocHighlights(page).texts()).toEqual(['1.1.1.1']);
+});
+
+test('overlapping mutation roots parse each new text node only once', async ({ page }) => {
+  await fixture(page);
+  await page.evaluate(() => {
+    const section = document.createElement('section');
+    document.querySelector('main').append(section);
+    const p = document.createElement('p'); p.textContent = 'plain overlapping event';
+    section.append(p);
+  });
+  await expect.poll(() => page.evaluate(() => metrics.scans.length)).toBe(2);
+  expect(await page.evaluate(() => metrics.parsed.filter(text => text === 'plain overlapping event').length)).toBe(1);
 });
