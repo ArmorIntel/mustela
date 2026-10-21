@@ -1,14 +1,15 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
-import { launchExtensionContext, startFixtureServer, openFixturePage, getServiceWorker, iocHighlights } from './support/extensionHarness.js';
+import { launchExtensionContext, startFixtureServer, openFixturePage, getServiceWorker, iocHighlights, inspectClosedRoots } from './support/extensionHarness.js';
 
 const runtime = await fs.readFile(new URL('../../src/shared/ioc.content-runtime.js', import.meta.url), 'utf8');
-const content = await fs.readFile(new URL('../../src/content/content.js', import.meta.url), 'utf8');
+const content = await fs.readFile(new URL('../../dist/chrome/src/content/content.js', import.meta.url), 'utf8');
 
 // Run the shipped content scripts in a real browser DOM with a counted local
 // transport. The extension E2E suite separately covers Chrome message delivery.
 async function fixture(page, html = '<main><p>8.8.8.8 evil.example.org</p></main>') {
   await page.setContent(`<html><body>${html}</body></html>`);
+  await inspectClosedRoots(page);
   await page.evaluate(() => {
     window.metrics = { scans: [], parsed: [], messages: [] };
     window.chrome = { runtime: {
@@ -64,22 +65,26 @@ test('loaded extension delivers one detection message and keeps its DOM stable o
     const page = await openFixturePage(extension.context, server.urlFor('/many-iocs.html'));
     await expect.poll(() => iocHighlights(page).count()).toBeGreaterThan(0);
     await expect.poll(() => worker.evaluate(() => detectionMessages.length)).toBe(1);
-    await page.evaluate(() => { window.mark = [...CSS.highlights.get('mustela-ioc')][0]; window.indicator = document.querySelector('.mustela-page-indicator'); });
+    await page.evaluate(() => { window.mark = [...CSS.highlights.get('mustela-ioc')][0]; });
+    const indicator = await page.locator('.mustela-page-indicator').elementHandle();
     await page.waitForTimeout(10000);
     expect(await worker.evaluate(() => detectionMessages.length)).toBe(1);
-    expect(await page.evaluate(() => CSS.highlights.get('mustela-ioc').has(mark) && indicator === document.querySelector('.mustela-page-indicator'))).toBe(true);
+    expect(await page.evaluate(() => CSS.highlights.get('mustela-ioc').has(mark))).toBe(true);
+    expect(await indicator.evaluate((first, current) => first === current, await page.locator('.mustela-page-indicator').elementHandle())).toBe(true);
   } finally { await extension.close(); await server.close(); }
 });
 
 test('static IOC page stays idle for ten seconds after initial scan', async ({ page }) => {
   await fixture(page);
-  await page.evaluate(() => { window.firstMark = [...CSS.highlights.get('mustela-ioc')][0]; window.firstIndicator = document.querySelector('.mustela-page-indicator'); });
+  await page.evaluate(() => { window.firstMark = [...CSS.highlights.get('mustela-ioc')][0]; });
+  const indicator = await page.locator('.mustela-page-indicator').elementHandle();
   await page.waitForTimeout(10000);
-  const result = await page.evaluate(() => ({ ...metrics, stable: CSS.highlights.get('mustela-ioc').has(firstMark) && firstIndicator === document.querySelector('.mustela-page-indicator') }));
+  const result = await page.evaluate(() => ({ ...metrics, stable: CSS.highlights.get('mustela-ioc').has(firstMark) }));
   console.log('static', JSON.stringify(result));
   expect(result.scans).toHaveLength(1);
   expect(result.messages).toHaveLength(1);
   expect(result.stable).toBe(true);
+  expect(await indicator.evaluate((first, current) => first === current, await page.locator('.mustela-page-indicator').elementHandle())).toBe(true);
 });
 
 test('live stream scans only additions in bounded batches', async ({ page }) => {

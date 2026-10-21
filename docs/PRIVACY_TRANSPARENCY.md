@@ -58,6 +58,12 @@ IOC detected on the current tab, with page URL/title, are stored in **`chrome.st
 
 This storage remembers configuration and investigations and reduces repeated calls. It is not a promise of non-transmission: configured credentials authenticate requests, and some locally held context is used in prompts. The correlation response is returned to the UI; that handler does not save it to the investigation cache or history. Free-form analyst notes stay local in the examined LLM flows.
 
+### In-page UI isolation
+
+The investigation panel, detection indicator and hover tip share one closed shadow root with internal styles. Ordinary page DOM selectors, `innerText`/`innerHTML`, and subtree MutationObservers cannot read their verdicts, provider results, Analyst Assist text, notes or TLP labels. UI identifiers and classes stay inside that root. The panel resets inherited styles, exposes a named non-modal dialog, supports Escape and restores prior focus on close. Only the panel uses a moderate backdrop blur; reduced-transparency preferences select an opaque background.
+
+This is DOM/CSS encapsulation, **not a security boundary against a hostile site**. The page can remove or obscure the host, observe composed events in capture listeners (including typed keystrokes), and observe existing page highlights. Do not type sensitive investigation notes on an untrusted page expecting closed shadow DOM to guarantee confidentiality. Use a trusted page for sensitive work. Clipboard, downloads, explicit sharing, extension/profile compromise and the outgoing flows below keep their existing limitations. No permission, recipient or network trigger is added.
+
 ## Message security boundary
 
 API keys are never transmitted to visited pages or their content scripts through extension messages. Display settings contain only `highlightEnabled` and `detectionMode`; settings-change broadcasts to tabs contain exactly those two fields, not provider credentials or API configuration URLs. A separate detection-policy read supplies local exclusion rules and the page's matching decision to the isolated extension content script for local filtering; it does not insert the rule list into the site's DOM or send it to a provider. Rule management remains reserved to extension pages.

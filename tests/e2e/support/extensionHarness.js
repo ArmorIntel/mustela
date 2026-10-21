@@ -15,6 +15,7 @@ async function readFixture(name) {
 
 export async function startFixtureServer() {
   const fixtures = {
+    '/hostile-styles.html': await readFixture('hostile-styles.html'),
     '/iocs.html': await readFixture('iocs.html'),
     '/email-iocs.html': await readFixture('email-iocs.html'),
     '/ipv6-iocs.html': await readFixture('ipv6-iocs.html'),
@@ -148,8 +149,61 @@ export async function bindPopupToTab(context, popup, targetPage) {
   return popup;
 }
 
+// CDP can inspect closed roots. Expose them only to Playwright's utility world:
+// the extension still uses mode:closed and page JavaScript still sees null.
+export async function inspectClosedRoots(page) {
+  const session = await page.context().newCDPSession(page);
+  let utilityContext;
+  let refreshing = false;
+  let again = false;
+  async function refresh() {
+    if (!utilityContext || page.isClosed()) return;
+    if (refreshing) { again = true; return; }
+    refreshing = true;
+    try {
+      const { root } = await session.send('DOM.getDocument', { depth: -1, pierce: true });
+      async function visit(node) {
+        for (const shadow of node.shadowRoots || []) {
+          if (shadow.shadowRootType === 'closed') {
+            const { object } = await session.send('DOM.resolveNode', { backendNodeId: shadow.backendNodeId, executionContextId: utilityContext });
+            await session.send('Runtime.callFunctionOn', {
+              objectId: object.objectId,
+              functionDeclaration: 'function() { Object.defineProperty(this.host, "shadowRoot", { configurable: true, value: this }); }'
+            });
+            await session.send('Runtime.releaseObject', { objectId: object.objectId });
+          }
+          await visit(shadow);
+        }
+        for (const child of node.children || []) await visit(child);
+      }
+      await visit(root);
+    } catch (error) {
+      // Navigation destroys execution contexts and nodes; the next lifecycle
+      // event retries against the replacement document.
+      if (!/closed|destroyed|context|document|node/i.test(error.message)) throw error;
+    } finally {
+      refreshing = false;
+      if (again) { again = false; await refresh(); }
+    }
+  }
+  session.on('Runtime.executionContextCreated', ({ context }) => {
+    if (context.name.startsWith('__playwright_utility_world_')) { utilityContext = context.id; void refresh(); }
+  });
+  session.on('Runtime.executionContextsCleared', () => { utilityContext = null; });
+  session.on('DOM.documentUpdated', () => { void refresh(); });
+  session.on('DOM.shadowRootPushed', () => { void refresh(); });
+  session.on('DOM.childNodeInserted', ({ node }) => {
+    if (node.shadowRoots?.length) void refresh();
+  });
+  page.on('domcontentloaded', () => { void refresh(); });
+  await session.send('Runtime.enable');
+  await session.send('DOM.enable');
+  await session.send('DOM.getDocument', { depth: -1, pierce: true });
+}
+
 export async function openFixturePage(context, url) {
   const page = await context.newPage();
+  await inspectClosedRoots(page);
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   return page;
 }
