@@ -11,8 +11,12 @@ test('closed panel resists hostile CSS and keeps result renders out of page DOM'
     const page = await openFixturePage(extension.context, server.urlFor('/hostile-styles.html'));
     await page.evaluate(() => {
       window.leakedMutations = [];
+      window.leakedDownloadLinks = [];
       new MutationObserver(records => {
-        for (const r of records) window.leakedMutations.push(r.target.textContent, ...[...r.addedNodes].map(n => n.textContent));
+        for (const r of records) {
+          window.leakedMutations.push(r.target.textContent, ...[...r.addedNodes].map(n => n.textContent));
+          for (const node of r.addedNodes) if (node.matches?.('a[download]')) window.leakedDownloadLinks.push(node.href);
+        }
       }).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
       window.leakedInputs = [];
       document.addEventListener('input', e => window.leakedInputs.push(e.data || e.target.value || 'input'));
@@ -61,6 +65,7 @@ test('closed panel resists hostile CSS and keeps result renders out of page DOM'
     const downloading = page.waitForEvent('download');
     await page.locator('#mustela-download-export').click();
     expect((await downloading).suggestedFilename()).toMatch(/\.json$/);
+    expect(await page.evaluate(() => window.leakedDownloadLinks)).toEqual([]);
     await page.locator('#mustela-rerun').click();
     await expect(note).toHaveValue('Private investigation note');
     await page.locator('#mustela-close').focus();

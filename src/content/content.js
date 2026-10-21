@@ -334,7 +334,7 @@ function downloadTextFile(filename, content, mimeType = 'application/json') {
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
-  document.body.appendChild(link);
+  ensureUiRoot().append(link);
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
